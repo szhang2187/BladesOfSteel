@@ -1,0 +1,59 @@
+# Blades of Steel
+
+A simple 16-bit style two-player platformer fencing game built with HTML, CSS, and JavaScript.
+
+## Play
+
+GitHub Pages link:
+
+https://szhang2187.github.io/BladesOfSteel/
+
+## Features
+
+- Local two-player sword combat
+- HP bars and three-life match system
+- Sword attacks, dashing, jump, and double jump
+- Dash invulnerability
+- Map selection screen
+- Settings screen with sound effect volume
+- Help screen with controls
+- Three maps:
+  - Weizen Farm
+  - Ashigaru Forest
+  - Neo York
+
+## Controls
+
+Player 1:
+
+- Move: `A` / `D`
+- Jump: `W`
+- Double jump: press `W` again in the air
+- Attack: `E`
+- Dash: `R`
+
+Player 2:
+
+- Move: `Left Arrow` / `Right Arrow`
+- Jump: `Up Arrow`
+- Double jump: press `Up Arrow` again in the air
+- Attack: `Enter`
+- Dash: `/`
+
+## How To Win
+
+Each player starts with 100 HP and three lives. Sword hits deal 20 damage. When a player loses all HP or falls into the void on maps that allow it, they lose a life. The first player to remove all three of the other player's lives wins.
+
+## Run Locally
+
+Open `index.html` in a browser, or start a local server from the project folder:
+
+```powershell
+python -m http.server 8000
+```
+
+Then visit:
+
+```text
+http://localhost:8000
+```
