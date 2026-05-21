@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Autumn Fencing Platformer Background</title>
   <style>
+    /* Global theme variables shared by the game art and UI. */
     :root {
       --sky-top: #6fb1c6;
       --sky-mid: #e7a35d;
@@ -51,6 +52,7 @@
       isolation: isolate;
     }
 
+    /* Map background modes applied to the main game frame. */
     .game-frame.map-weizen {
       background:
         linear-gradient(var(--sky-top) 0 25%, var(--sky-mid) 55%, var(--sky-low) 78%, #a76e33 100%);
@@ -105,6 +107,7 @@
       display: block;
     }
 
+    /* Ashigaru Forest background artwork. */
     .ashigaru-scene {
       z-index: 1;
       background:
@@ -136,6 +139,7 @@
       border-top: 5px solid rgba(170, 115, 57, .64);
     }
 
+    /* Neo York skyline background artwork. */
     .neo-scene {
       z-index: 1;
       background:
@@ -480,6 +484,7 @@
       100% { transform: translate3d(-16px, 108vh, 0) rotate(360deg); }
     }
 
+    /* Fighter sprite parts, sword shape, and animation states. */
     .fighter {
       left: 0;
       bottom: 0;
@@ -778,6 +783,7 @@
       50% { filter: brightness(1.75) saturate(1.7); }
     }
 
+    /* In-match HUD: health bars, lives, round label, and winner banner. */
     .hud {
       left: 2%;
       right: 2%;
@@ -939,6 +945,7 @@
       display: none !important;
     }
 
+    /* Full-screen menu overlays used before and between matches. */
     .main-menu,
     .settings-menu,
     .help-menu,
@@ -1206,6 +1213,7 @@
       display: none;
     }
 
+    /* Map selection cards and their mini background previews. */
     .map-result {
       min-height: 1.1em;
       margin: 0;
@@ -1308,6 +1316,7 @@
       clip-path: polygon(0 54%, 4% 54%, 4% 27%, 12% 27%, 12% 48%, 16% 48%, 16% 12%, 25% 12%, 25% 42%, 30% 42%, 30% 5%, 39% 5%, 39% 52%, 45% 52%, 45% 18%, 58% 18%, 58% 46%, 64% 46%, 64% 0, 74% 0, 74% 38%, 79% 38%, 79% 14%, 89% 14%, 89% 56%, 100% 56%, 100% 100%, 0 100%);
     }
 
+    /* Compact adjustments for small browser windows. */
     @media (max-width: 720px) {
       .game-frame {
         border-width: 4px;
@@ -1346,9 +1355,11 @@
 </head>
 <body>
   <main class="game-frame map-weizen" aria-label="16-bit fencing game">
+    <!-- Alternate map background layers. -->
     <div class="ashigaru-scene" aria-hidden="true"></div>
     <div class="neo-scene" aria-hidden="true"></div>
 
+    <!-- Weizen Farm sky, hills, grain, and windmill scenery. -->
     <div class="sun"></div>
     <div class="clouds"></div>
     <div class="hills"></div>
@@ -1390,11 +1401,13 @@
     <div class="field"></div>
     <div class="fence"></div>
 
+    <!-- Platforms are repositioned by JavaScript for the selected map. -->
     <div class="platform left"></div>
     <div class="platform mid"></div>
     <div class="platform right"></div>
     <div class="platform main"></div>
 
+    <!-- Player sprites. -->
     <div class="fighter one" aria-hidden="true">
       <div class="head"></div>
       <div class="torso"></div>
@@ -1413,6 +1426,7 @@
       <div class="leg-b"></div>
     </div>
 
+    <!-- In-match HUD for health, lives, and round status. -->
     <div class="hud">
       <div class="player-status left">
         <div class="meter left"><span></span><strong class="hp-label">P1 100 HP</strong></div>
@@ -1433,11 +1447,13 @@
       </div>
     </div>
 
+    <!-- Match result message; multiplayer hides the replay button and returns to menu. -->
     <div class="winner-banner is-hidden" aria-live="polite">
       <span class="winner-message"></span>
       <button class="replay-button" type="button">Replay</button>
     </div>
 
+    <!-- Main menu and single-player utility screens. -->
     <section class="main-menu" aria-label="main menu">
       <h1>Blades of Steel</h1>
       <div class="menu-actions">
@@ -1478,6 +1494,7 @@
       <button class="menu-button help-back-button" type="button">Back</button>
     </section>
 
+    <!-- Multiplayer setup screens: name entry, lobby choice, host lobby, and join-code entry. -->
     <section class="name-menu is-hidden" aria-label="multiplayer name">
       <h1>Multiplayer</h1>
       <form class="name-panel multiplayer-name-form">
@@ -1531,6 +1548,7 @@
       </form>
     </section>
 
+    <!-- Waiting screen shown while multiplayer connection steps complete. -->
     <section class="matchmaking-menu is-hidden" aria-label="matchmaking">
       <h1 class="matchmaking-title">Looking for opponent...</h1>
       <div class="match-found-box is-hidden">Match Found!</div>
@@ -1542,6 +1560,7 @@
       </div>
     </section>
 
+    <!-- Single-player map picker. -->
     <section class="map-select is-hidden" aria-label="select map">
       <h1>select map</h1>
       <p class="map-result" aria-live="polite"></p>
@@ -1562,6 +1581,7 @@
       <button class="menu-button map-back-button" type="button">Back to Main Menu</button>
     </section>
 
+    <!-- Ambient foreground effects. -->
     <i class="leaf"></i>
     <i class="leaf"></i>
     <i class="leaf"></i>
@@ -1572,6 +1592,7 @@
   </main>
 
   <script>
+    // DOM handles for the game frame, screens, buttons, HUD, and map picker.
     const gameFrame = document.querySelector(".game-frame");
     const roundLabel = document.querySelector(".round");
     const winnerBanner = document.querySelector(".winner-banner");
@@ -1619,6 +1640,8 @@
     const mapResult = document.querySelector(".map-result");
     const mapBackButton = document.querySelector(".map-back-button");
     const mapButtons = [...document.querySelectorAll(".map-option")];
+
+    // Runtime state for both fighters.
     const players = [
       {
         el: document.querySelector(".fighter.one"),
@@ -1687,10 +1710,14 @@
         dashReadyAt: 0
       }
     ];
+
+    // Single-player uses local keyboard mappings for both fighters.
     const SINGLEPLAYER_PLAYER_SETUP = [
       { name: "P1", label: "Player 1", leftKey: "KeyA", rightKey: "KeyD", jumpKey: "KeyW", attackKey: "KeyE", dashKey: "KeyR" },
       { name: "P2", label: "Player 2", leftKey: "ArrowLeft", rightKey: "ArrowRight", jumpKey: "ArrowUp", attackKey: "Enter", dashKey: "Slash" }
     ];
+
+    // Multiplayer uses the same control keys for each player on their own device.
     const MULTIPLAYER_KEYS = {
       left: "KeyA",
       right: "KeyD",
@@ -1699,6 +1726,8 @@
       dash: "KeyR"
     };
     const MULTIPLAYER_CONTROL_KEYS = new Set(Object.values(MULTIPLAYER_KEYS));
+
+    // Combat, movement, timing, and match tuning values.
     const ATTACK_DAMAGE = 20;
     const ATTACK_DURATION = 260;
     const ATTACK_COOLDOWN = 520;
@@ -1713,6 +1742,8 @@
     const DASH_COOLDOWN = 850;
     const MATCH_FOUND_DELAY = 2000;
     const MULTIPLAYER_STATE_INTERVAL = 50;
+
+    // Peer-to-peer connection settings used by Trystero.
     const MULTIPLAYER_APP_CONFIG = {
       appId: "blades-of-steel-szhang2187-v4",
       relayUrls: [
@@ -1734,6 +1765,8 @@
     };
     const MULTIPLAYER_ROOM_PREFIX = "code-lobby-v2";
     const MULTIPLAYER_MAP_ID = "weizen";
+
+    // Sound effect pools allow repeated sounds without cutting off the previous one.
     const SWING_SOUND_SRC = "assets/sword-swing.mp3";
     const LIFE_LOST_SOUND_SRC = "assets/life-lost.mp3";
     let swingVolume = .65;
@@ -1751,6 +1784,8 @@
     });
     let nextSwingSound = 0;
     let nextLifeLostSound = 0;
+
+    // Input collections track held keys and rebuildable control lookups.
     const heldKeys = new Set();
     const multiplayerInputs = players.map(() => ({ left: false, right: false }));
     let movementKeys = new Set();
@@ -1758,6 +1793,8 @@
     let attackKeys = new Map();
     let dashKeys = new Map();
     const platformEls = [...document.querySelectorAll(".platform")];
+
+    // Map definitions return platform geometry for the current frame.
     const maps = {
       weizen: {
         id: "weizen",
@@ -1821,6 +1858,8 @@
         }
       }
     };
+
+    // Current game, menu, and transition state.
     let currentMap = maps.weizen;
     let gameMode = "singleplayer";
     let menuOpen = true;
@@ -1836,6 +1875,8 @@
     let roundResetTimer = null;
     let winnerTransitionTimer = null;
     let trysteroModulePromise = null;
+
+    // Multiplayer session state shared by lobby, match start, and network sync.
     const multiplayer = {
       status: "idle",
       room: null,
@@ -1856,6 +1897,7 @@
       lastStateSentAt: 0
     };
 
+    // Build control lookup maps from whichever keybinds are currently active.
     function refreshSingleplayerControlMaps() {
       movementKeys = new Set(players.flatMap((player) => [player.leftKey, player.rightKey]));
       jumpKeys = new Map(players.map((player, index) => [player.jumpKey, index]));
@@ -1872,6 +1914,7 @@
 
     configureSingleplayerPlayers();
 
+    // Small helpers for bounds, screen size, and active platform rectangles.
     function clamp(value, min, max) {
       return Math.min(Math.max(value, min), max);
     }
@@ -1980,6 +2023,7 @@
       return [platform, platform];
     }
 
+    // Visual map/platform rendering helpers.
     function setMap(mapId) {
       currentMap = maps[mapId] || maps.weizen;
       gameFrame.classList.remove(...Object.values(maps).map((map) => map.className));
@@ -1996,6 +2040,7 @@
       gameFrame.classList.toggle("ui-mode", active);
     }
 
+    // Screen navigation helpers for menu, settings, help, lobby, and map select.
     function hideMultiplayerSetupMenus() {
       multiplayerChoiceMenu.classList.add("is-hidden");
       lobbyMenu.classList.add("is-hidden");
@@ -2265,6 +2310,7 @@
       cancelMatchmakingButton.focus();
     }
 
+    // Audio controls and sound playback.
     function setSwingVolume(value) {
       swingVolume = clamp(Number(value) / 100, 0, 1);
       swingSounds.forEach((sound) => {
@@ -2299,6 +2345,7 @@
       resetMatch();
     }
 
+    // Player movement helpers and action starters.
     function jumpVelocity() {
       return clamp(gameFrame.clientHeight * 1.28, 700, 980);
     }
@@ -2376,6 +2423,7 @@
       player.el.classList.add("is-dashing");
     }
 
+    // Health, lives, damage, and match-ending behavior.
     function setPlayerHp(player, hp) {
       player.hp = clamp(hp, 0, player.maxHp);
       const hpPercent = (player.hp / player.maxHp) * 100;
@@ -2563,6 +2611,7 @@
       }, ATTACK_DURATION);
     }
 
+    // Round and full-match reset helpers.
     function resetRound() {
       heldKeys.clear();
       roundLabel.textContent = multiplayerMatchActive()
@@ -2617,6 +2666,7 @@
       resetRound();
     }
 
+    // Multiplayer lobby setup, join codes, and connection lifecycle.
     function sanitizePlayerName(name) {
       const cleanName = String(name || "").trim().replace(/\s+/g, " ").slice(0, 14);
       return cleanName || `Fencer ${Math.floor(1000 + Math.random() * 9000)}`;
@@ -2962,6 +3012,7 @@
       resetMatch();
     }
 
+    // Multiplayer input routing keeps the host authoritative during online play.
     function applyMultiplayerMove(playerIndex, direction, pressed) {
       const input = multiplayerInputs[playerIndex];
 
@@ -3081,6 +3132,7 @@
       };
     }
 
+    // Host sends snapshots; guest applies snapshots instead of running physics locally.
     function sendMultiplayerState(force = false) {
       if (!multiplayerMatchActive() || !multiplayer.isHost || !multiplayer.remotePeerId) {
         return;
@@ -3155,6 +3207,7 @@
       }
     }
 
+    // Spawn fighters on the currently selected map.
     function placePlayers() {
       const bounds = stageBounds();
       const platforms = mapPlatformRects();
@@ -3177,6 +3230,7 @@
       });
     }
 
+    // Keyboard input for menus, local controls, and multiplayer controls.
     window.addEventListener("keydown", (event) => {
       const targetElement = event.target instanceof Element ? event.target : null;
 
@@ -3274,6 +3328,7 @@
       event.preventDefault();
     });
 
+    // Button and form event wiring.
     replayButton.addEventListener("click", resetMatch);
     singleplayerButton.addEventListener("click", () => showMapSelect());
     multiplayerButton.addEventListener("click", () => showMultiplayerNamePrompt());
@@ -3313,6 +3368,7 @@
       button.addEventListener("click", () => selectMap(button.dataset.map));
     });
 
+    // Keep movement state sane when the tab loses focus or the frame resizes.
     window.addEventListener("blur", () => {
       if (multiplayerMatchActive()) {
         const input = multiplayerInputs[multiplayer.localPlayerIndex];
@@ -3351,6 +3407,7 @@
 
     let previousTime = performance.now();
 
+    // Main animation loop: input, physics, moving platforms, attacks, and sync.
     function update(now) {
       const delta = Math.min((now - previousTime) / 1000, 0.05);
       previousTime = now;
@@ -3462,6 +3519,7 @@
       requestAnimationFrame(update);
     }
 
+    // Initial page setup.
     setSwingVolume(volumeSlider.value);
     showHelpPage("single");
     showMainMenu(true);
