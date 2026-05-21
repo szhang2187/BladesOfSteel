@@ -1593,8 +1593,8 @@
     const DASH_COOLDOWN = 850;
     const MATCH_FOUND_DELAY = 2000;
     const MULTIPLAYER_STATE_INTERVAL = 50;
-    const MULTIPLAYER_APP_CONFIG = { appId: "blades-of-steel-szhang2187-v1" };
-    const MULTIPLAYER_LOBBY_ROOM = "public-matchmaking-v1";
+    const MULTIPLAYER_APP_CONFIG = { appId: "blades-of-steel-szhang2187-v2" };
+    const MULTIPLAYER_LOBBY_ROOM = "public-matchmaking-v2";
     const MULTIPLAYER_MAP_ID = "weizen";
     const SWING_SOUND_SRC = "assets/sword-swing.mp3";
     let swingVolume = .65;
@@ -2353,7 +2353,7 @@
 
     function loadTrystero() {
       if (!trysteroModulePromise) {
-        trysteroModulePromise = import("https://esm.run/@trystero-p2p/torrent");
+        trysteroModulePromise = import("https://esm.run/trystero");
       }
 
       return trysteroModulePromise;
@@ -2516,7 +2516,7 @@
     }
 
     function handleMultiplayerMatchOffer(data, peerId) {
-      if (multiplayer.status !== "queue" || data?.target !== multiplayer.selfId) {
+      if (multiplayer.status !== "queue" || peerId === multiplayer.selfId || (data?.target && data.target !== multiplayer.selfId)) {
         return;
       }
 
