@@ -1,0 +1,2277 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Autumn Fencing Platformer Background</title>
+  <style>
+    :root {
+      --sky-top: #6fb1c6;
+      --sky-mid: #e7a35d;
+      --sky-low: #f3ce79;
+      --ink: #392923;
+      --dark: #4b3327;
+      --field: #c89135;
+      --field-light: #e0b95d;
+      --field-dark: #966325;
+      --rust: #a54f2f;
+      --leaf: #b9652f;
+      --cream: #e9d09c;
+      --shadow: #2b2322;
+      --platform: #6b4a30;
+      --platform-edge: #9a6639;
+      font-family: "Trebuchet MS", Verdana, sans-serif;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      min-height: 100vh;
+      margin: 0;
+      display: grid;
+      place-items: center;
+      background: #1e1b1e;
+      color: var(--cream);
+      overflow: hidden;
+    }
+
+    .game-frame {
+      position: relative;
+      width: min(100vw, 1280px);
+      aspect-ratio: 16 / 9;
+      max-height: 100vh;
+      image-rendering: pixelated;
+      overflow: hidden;
+      background:
+        linear-gradient(var(--sky-top) 0 25%, var(--sky-mid) 55%, var(--sky-low) 78%, #a76e33 100%);
+      border: 6px solid #151313;
+      box-shadow: 0 24px 90px rgba(0, 0, 0, .55);
+      isolation: isolate;
+    }
+
+    .game-frame.map-weizen {
+      background:
+        linear-gradient(var(--sky-top) 0 25%, var(--sky-mid) 55%, var(--sky-low) 78%, #a76e33 100%);
+    }
+
+    .game-frame.map-ashigaru {
+      background:
+        linear-gradient(#283363 0 24%, #8a4b69 53%, #d1834d 75%, #342719 100%);
+    }
+
+    .game-frame.map-neo {
+      background:
+        linear-gradient(#080924 0 31%, #222a63 62%, #3d214f 82%, #0a0d1c 100%);
+    }
+
+    .pixel-overlay,
+    .vignette,
+    .clouds,
+    .sun,
+    .hills,
+    .distant-grain,
+    .windmill,
+    .field,
+    .platform,
+    .fighter,
+    .hud {
+      position: absolute;
+    }
+
+    .ashigaru-scene,
+    .neo-scene {
+      position: absolute;
+      inset: 0;
+      display: none;
+      overflow: hidden;
+      pointer-events: none;
+    }
+
+    .game-frame:not(.map-weizen) .sun,
+    .game-frame:not(.map-weizen) .clouds,
+    .game-frame:not(.map-weizen) .hills,
+    .game-frame:not(.map-weizen) .distant-grain,
+    .game-frame:not(.map-weizen) .windmill,
+    .game-frame:not(.map-weizen) .field,
+    .game-frame:not(.map-weizen) .fence,
+    .game-frame:not(.map-weizen) .leaf {
+      display: none;
+    }
+
+    .game-frame.map-ashigaru .ashigaru-scene,
+    .game-frame.map-neo .neo-scene {
+      display: block;
+    }
+
+    .ashigaru-scene {
+      z-index: 1;
+      background:
+        radial-gradient(11% 18% at 78% 18%, rgba(255, 226, 154, .82) 0 42%, transparent 43%),
+        linear-gradient(#24345f 0 22%, #6f456a 52%, #c57949 78%, #2e241a 100%);
+    }
+
+    .ashigaru-scene::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background:
+        repeating-linear-gradient(90deg, transparent 0 18px, rgba(28, 65, 47, .72) 18px 24px, transparent 24px 62px),
+        repeating-linear-gradient(76deg, transparent 0 74px, rgba(43, 91, 56, .42) 74px 82px, transparent 82px 150px),
+        repeating-linear-gradient(104deg, transparent 0 88px, rgba(19, 55, 45, .45) 88px 96px, transparent 96px 170px);
+      clip-path: polygon(0 5%, 100% 0, 100% 83%, 0 88%);
+    }
+
+    .ashigaru-scene::after {
+      content: "";
+      position: absolute;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      height: 26%;
+      background:
+        repeating-linear-gradient(90deg, transparent 0 22px, rgba(18, 48, 35, .58) 22px 28px),
+        linear-gradient(#36532d 0 22%, #283722 23% 63%, #1a2218 64%);
+      border-top: 5px solid rgba(170, 115, 57, .64);
+    }
+
+    .neo-scene {
+      z-index: 1;
+      background:
+        radial-gradient(18% 24% at 73% 18%, rgba(104, 236, 255, .3) 0 42%, transparent 43%),
+        linear-gradient(#080924 0 30%, #222a63 62%, #3d214f 82%, #0a0d1c 100%);
+    }
+
+    .neo-scene::before {
+      content: "";
+      position: absolute;
+      left: 0;
+      right: 0;
+      bottom: 13%;
+      height: 52%;
+      background:
+        repeating-linear-gradient(90deg, transparent 0 28px, rgba(104, 236, 255, .78) 28px 32px, transparent 32px 56px),
+        linear-gradient(90deg, transparent 0 4%, #101733 4% 12%, transparent 12% 15%, #16224a 15% 25%, transparent 25% 29%, #0f1838 29% 40%, transparent 40% 44%, #19295a 44% 58%, transparent 58% 62%, #121c3f 62% 74%, transparent 74% 77%, #1c2a5f 77% 89%, transparent 89% 100%);
+      clip-path: polygon(0 54%, 4% 54%, 4% 27%, 12% 27%, 12% 48%, 16% 48%, 16% 12%, 25% 12%, 25% 42%, 30% 42%, 30% 5%, 39% 5%, 39% 52%, 45% 52%, 45% 18%, 58% 18%, 58% 46%, 64% 46%, 64% 0, 74% 0, 74% 38%, 79% 38%, 79% 14%, 89% 14%, 89% 56%, 100% 56%, 100% 100%, 0 100%);
+    }
+
+    .neo-scene::after {
+      content: "";
+      position: absolute;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      height: 20%;
+      background:
+        repeating-linear-gradient(90deg, rgba(255, 65, 188, .55) 0 8px, transparent 8px 42px),
+        linear-gradient(#0c1029 0 38%, #111827 39%);
+      box-shadow: 0 -8px 0 rgba(104, 236, 255, .34);
+    }
+
+    .pixel-overlay {
+      inset: 0;
+      background-image:
+        linear-gradient(rgba(255, 255, 255, .035) 50%, transparent 50%),
+        linear-gradient(90deg, rgba(255, 255, 255, .025) 50%, transparent 50%);
+      background-size: 4px 4px;
+      pointer-events: none;
+      z-index: 30;
+      mix-blend-mode: soft-light;
+    }
+
+    .vignette {
+      inset: 0;
+      z-index: 31;
+      pointer-events: none;
+      background:
+        linear-gradient(90deg, rgba(20, 18, 18, .32), transparent 14%, transparent 86%, rgba(20, 18, 18, .32)),
+        linear-gradient(0deg, rgba(20, 18, 18, .42), transparent 26%, transparent 88%, rgba(20, 18, 18, .16));
+    }
+
+    .sun {
+      width: 12%;
+      aspect-ratio: 1;
+      left: 10%;
+      top: 12%;
+      background: #f7d880;
+      box-shadow:
+        0 0 0 8px rgba(247, 216, 128, .18),
+        0 0 0 20px rgba(247, 216, 128, .08);
+      border-radius: 2px;
+    }
+
+    .clouds {
+      inset: 7% -20% auto -10%;
+      height: 18%;
+      background:
+        linear-gradient(#fff6d8 0 0) 10% 48% / 14% 16% no-repeat,
+        linear-gradient(#fff6d8 0 0) 17% 36% / 8% 16% no-repeat,
+        linear-gradient(#f4d69a 0 0) 70% 34% / 18% 14% no-repeat,
+        linear-gradient(#f4d69a 0 0) 82% 48% / 12% 13% no-repeat,
+        linear-gradient(#ffe8b2 0 0) 46% 62% / 17% 13% no-repeat;
+      opacity: .72;
+      animation: drift 30s linear infinite;
+    }
+
+    @keyframes drift {
+      from { transform: translateX(0); }
+      to { transform: translateX(10%); }
+    }
+
+    .hills {
+      left: -4%;
+      right: -4%;
+      bottom: 35%;
+      height: 30%;
+      background:
+        radial-gradient(85% 78% at 24% 100%, #75633b 0 52%, transparent 53%),
+        radial-gradient(86% 82% at 68% 102%, #8e733c 0 48%, transparent 49%),
+        radial-gradient(58% 62% at 93% 100%, #685538 0 52%, transparent 53%);
+      filter: saturate(.9);
+    }
+
+    .distant-grain {
+      left: 0;
+      right: 0;
+      bottom: 27%;
+      height: 18%;
+      background:
+        repeating-linear-gradient(90deg, transparent 0 12px, rgba(86, 52, 25, .24) 12px 14px),
+        linear-gradient(0deg, #a7652d 0 28%, #c38234 29% 64%, #d6a146 65% 100%);
+      clip-path: polygon(0 20%, 8% 28%, 17% 21%, 27% 34%, 38% 22%, 49% 31%, 62% 18%, 76% 30%, 90% 20%, 100% 28%, 100% 100%, 0 100%);
+    }
+
+    .windmill {
+      width: 13%;
+      height: 33%;
+      bottom: 30%;
+      z-index: 6;
+    }
+
+    .windmill.small {
+      width: 9%;
+      height: 25%;
+      bottom: 34%;
+      opacity: .72;
+      filter: saturate(.85);
+    }
+
+    .windmill.left {
+      left: 22%;
+    }
+
+    .windmill.right {
+      right: 17%;
+    }
+
+    .windmill.far {
+      left: 58%;
+    }
+
+    .tower {
+      position: absolute;
+      left: 39%;
+      bottom: 0;
+      width: 22%;
+      height: 72%;
+      background:
+        linear-gradient(90deg, transparent 0 18%, rgba(50, 34, 26, .28) 19% 24%, transparent 25% 76%, rgba(50, 34, 26, .24) 77% 82%, transparent 83%),
+        linear-gradient(#c59557, #7b4d2d);
+      clip-path: polygon(24% 0, 76% 0, 100% 100%, 0 100%);
+      border-bottom: 8px solid #4b3327;
+    }
+
+    .roof {
+      position: absolute;
+      left: 28%;
+      bottom: 66%;
+      width: 44%;
+      height: 22%;
+      background: var(--rust);
+      clip-path: polygon(50% 0, 100% 72%, 86% 100%, 14% 100%, 0 72%);
+    }
+
+    .door {
+      position: absolute;
+      left: 45%;
+      bottom: 0;
+      width: 10%;
+      height: 18%;
+      background: #3d2a23;
+    }
+
+    .blades {
+      position: absolute;
+      left: 50%;
+      bottom: 70%;
+      width: 9%;
+      aspect-ratio: 1;
+      transform-origin: center;
+      animation: spin 8s steps(16) infinite;
+    }
+
+    .blades::before,
+    .blades::after,
+    .blade-a,
+    .blade-b {
+      content: "";
+      position: absolute;
+      left: 43%;
+      top: -260%;
+      width: 14%;
+      height: 300%;
+      background: #ead59d;
+      box-shadow: 0 0 0 2px #5b3a2a inset;
+      transform-origin: 50% 100%;
+    }
+
+    .blades::after {
+      transform: rotate(90deg);
+    }
+
+    .blade-a {
+      transform: rotate(45deg);
+    }
+
+    .blade-b {
+      transform: rotate(135deg);
+    }
+
+    .hub {
+      position: absolute;
+      inset: -65%;
+      margin: auto;
+      width: 130%;
+      height: 130%;
+      background: #5a3b2a;
+      border: 3px solid #ead59d;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    .field {
+      left: -2%;
+      right: -2%;
+      bottom: 0;
+      height: 42%;
+      z-index: 8;
+      background:
+        repeating-linear-gradient(90deg, transparent 0 10px, rgba(83, 50, 23, .42) 10px 12px),
+        repeating-linear-gradient(-18deg, transparent 0 21px, rgba(238, 197, 86, .38) 21px 25px),
+        linear-gradient(0deg, #7f4c25 0 9%, #a7662b 10% 34%, var(--field) 35% 74%, var(--field-light) 75% 100%);
+    }
+
+    .field::before,
+    .field::after {
+      content: "";
+      position: absolute;
+      left: 0;
+      width: 100%;
+      height: 30%;
+      background:
+        repeating-linear-gradient(90deg, transparent 0 18px, #5f3b20 18px 21px, transparent 21px 32px),
+        linear-gradient(0deg, transparent 0 34%, rgba(244, 209, 111, .7) 35% 45%, transparent 46%);
+      animation: wheat 2.2s steps(4) infinite alternate;
+    }
+
+    .field::before {
+      top: 8%;
+    }
+
+    .field::after {
+      bottom: 9%;
+      opacity: .75;
+      animation-duration: 2.8s;
+    }
+
+    @keyframes wheat {
+      from { transform: translateX(-4px) skewX(-1deg); }
+      to { transform: translateX(4px) skewX(1deg); }
+    }
+
+    .platform {
+      z-index: 14;
+      height: 6%;
+      background:
+        linear-gradient(0deg, #33251f 0 20%, transparent 21%),
+        repeating-linear-gradient(90deg, transparent 0 34px, rgba(43, 31, 26, .55) 34px 38px),
+        linear-gradient(#a9703c 0 38%, var(--platform-edge) 39% 45%, var(--platform) 46%);
+      border: 3px solid #2d221e;
+      box-shadow: 0 7px 0 #211918;
+    }
+
+    .platform.main {
+      left: 16%;
+      right: 16%;
+      bottom: 22%;
+      height: 7%;
+    }
+
+    .platform.left {
+      left: 5%;
+      bottom: 45%;
+      width: 23%;
+    }
+
+    .platform.right {
+      right: 5%;
+      bottom: 47%;
+      width: 23%;
+    }
+
+    .platform.mid {
+      left: 40%;
+      bottom: 59%;
+      width: 20%;
+      height: 5%;
+    }
+
+    .game-frame.map-ashigaru .platform {
+      display: none;
+    }
+
+    .game-frame.map-neo .platform {
+      background:
+        repeating-linear-gradient(90deg, transparent 0 20px, rgba(255, 255, 255, .22) 20px 24px),
+        linear-gradient(#69ecff 0 28%, #c345ff 29% 38%, #1b285e 39%);
+      border-color: #69ecff;
+      box-shadow:
+        0 0 0 2px #141836,
+        0 0 16px rgba(104, 236, 255, .7),
+        0 7px 0 #080b1c;
+    }
+
+    .fence {
+      position: absolute;
+      left: 2%;
+      right: 2%;
+      bottom: 31%;
+      height: 7%;
+      z-index: 9;
+      background:
+        repeating-linear-gradient(90deg, transparent 0 42px, #6d472c 42px 50px, transparent 50px 78px),
+        linear-gradient(0deg, transparent 0 30%, #7f5431 31% 44%, transparent 45% 61%, #8c5f36 62% 75%, transparent 76%);
+      opacity: .85;
+    }
+
+    .leaf {
+      position: absolute;
+      z-index: 20;
+      width: 10px;
+      height: 7px;
+      background: var(--leaf);
+      box-shadow: 3px 0 #d38a38;
+      animation: fall var(--speed) linear infinite;
+      opacity: .82;
+    }
+
+    .leaf:nth-of-type(1) { left: 12%; top: -8%; --speed: 8s; animation-delay: -1s; }
+    .leaf:nth-of-type(2) { left: 28%; top: -14%; --speed: 11s; animation-delay: -4s; }
+    .leaf:nth-of-type(3) { left: 51%; top: -10%; --speed: 9s; animation-delay: -2s; }
+    .leaf:nth-of-type(4) { left: 69%; top: -18%; --speed: 12s; animation-delay: -6s; }
+    .leaf:nth-of-type(5) { left: 85%; top: -9%; --speed: 10s; animation-delay: -3s; }
+
+    @keyframes fall {
+      0% { transform: translate3d(0, 0, 0) rotate(0deg); }
+      50% { transform: translate3d(34px, 54vh, 0) rotate(180deg); }
+      100% { transform: translate3d(-16px, 108vh, 0) rotate(360deg); }
+    }
+
+    .fighter {
+      left: 0;
+      bottom: 0;
+      width: 6%;
+      height: 19%;
+      z-index: 22;
+      --x: 0px;
+      --y: 0px;
+      --screen-y: 0px;
+      --facing: 1;
+      transform: translate(var(--x), var(--screen-y)) scaleX(var(--facing));
+      transform-origin: 50% 100%;
+      filter: drop-shadow(0 8px 0 rgba(40, 25, 20, .35));
+      will-change: transform;
+    }
+
+    .fighter.one {
+      --trim: #d64a38;
+    }
+
+    .fighter.two {
+      --trim: #5b91d8;
+      --facing: -1;
+    }
+
+    .fighter .head {
+      position: absolute;
+      left: 34%;
+      top: 4%;
+      width: 26%;
+      height: 19%;
+      background: #f2d5a7;
+      border: 3px solid var(--ink);
+    }
+
+    .fighter .torso {
+      position: absolute;
+      left: 27%;
+      top: 25%;
+      width: 34%;
+      height: 34%;
+      background:
+        linear-gradient(90deg, var(--trim) 0 24%, #dfd3bd 25%);
+      border: 3px solid var(--ink);
+    }
+
+    .fighter .leg-a,
+    .fighter .leg-b,
+    .fighter .arm,
+    .fighter .sword {
+      position: absolute;
+      background: var(--ink);
+    }
+
+    .fighter .leg-a {
+      left: 31%;
+      top: 57%;
+      width: 10%;
+      height: 30%;
+      transform: rotate(14deg);
+      transform-origin: 50% 4%;
+    }
+
+    .fighter .leg-b {
+      left: 51%;
+      top: 57%;
+      width: 10%;
+      height: 31%;
+      transform: rotate(-22deg);
+      transform-origin: 50% 4%;
+    }
+
+    .fighter .arm {
+      left: 55%;
+      top: 38%;
+      width: 11%;
+      height: 32%;
+      transform: rotate(-86deg);
+      transform-origin: 50% 10%;
+      background: #dfd3bd;
+      border: 3px solid var(--ink);
+    }
+
+    .fighter .sword {
+      left: 80%;
+      top: 42%;
+      width: 104%;
+      height: 13%;
+      transform: rotate(0deg);
+      transform-origin: 0 50%;
+      background: transparent;
+    }
+
+    .fighter .sword::before,
+    .fighter .sword::after {
+      content: "";
+      position: absolute;
+      background: #5b3a2a;
+      box-shadow: 0 0 0 2px var(--ink);
+    }
+
+    .fighter .sword::before {
+      left: 0;
+      top: -68%;
+      width: 7%;
+      height: 236%;
+      background:
+        linear-gradient(90deg, #876134, #e0ba5d 42% 58%, #876134);
+    }
+
+    .fighter .sword::after {
+      left: -18%;
+      top: 29%;
+      width: 21%;
+      height: 42%;
+    }
+
+    .fighter .blade {
+      position: absolute;
+      left: 5%;
+      top: 31%;
+      width: 95%;
+      height: 38%;
+      background:
+        linear-gradient(0deg, #66717a 0 18%, #dfe7df 19% 39%, #fff7d8 40% 58%, #aebbc2 59% 82%, #586069 83%);
+      clip-path: polygon(0 20%, 91% 20%, 100% 50%, 91% 80%, 0 80%);
+      box-shadow: 0 0 0 2px var(--ink);
+    }
+
+    .fighter.is-walking .head {
+      animation: head-bob 320ms steps(2) infinite;
+    }
+
+    .fighter.is-walking .torso {
+      animation: torso-bob 320ms steps(2) infinite;
+    }
+
+    .fighter.is-walking .arm {
+      animation: arm-step 320ms steps(2) infinite;
+    }
+
+    .fighter.is-walking .sword {
+      animation: sword-step 320ms steps(2) infinite;
+    }
+
+    .fighter.is-walking .leg-a {
+      animation: front-step 320ms steps(2) infinite;
+    }
+
+    .fighter.is-walking .leg-b {
+      animation: back-step 320ms steps(2) infinite;
+    }
+
+    .fighter.is-attacking .head {
+      animation: thrust-head 260ms steps(3) 1;
+    }
+
+    .fighter.is-attacking .torso {
+      animation: thrust-lean 260ms steps(3) 1;
+    }
+
+    .fighter.is-attacking .arm {
+      animation: thrust-arm 260ms steps(3) 1;
+    }
+
+    .fighter.is-attacking .sword {
+      animation: thrust-sword 260ms steps(3) 1;
+    }
+
+    .fighter.is-dashing {
+      filter:
+        brightness(1.45)
+        saturate(1.35)
+        drop-shadow(0 8px 0 rgba(40, 25, 20, .35))
+        drop-shadow(0 0 10px rgba(255, 242, 192, .55));
+    }
+
+    .fighter.is-dashing::before {
+      content: "";
+      position: absolute;
+      left: -62%;
+      top: 18%;
+      width: 72%;
+      height: 58%;
+      background:
+        repeating-linear-gradient(90deg, rgba(255, 242, 192, .85) 0 12px, transparent 12px 22px),
+        repeating-linear-gradient(90deg, rgba(109, 177, 198, .65) 0 8px, transparent 8px 18px);
+      opacity: .8;
+      animation: dash-trail 220ms steps(4) 1;
+      pointer-events: none;
+    }
+
+    .fighter.is-dashing .head {
+      animation: dash-head 220ms steps(3) 1;
+    }
+
+    .fighter.is-dashing .torso {
+      animation: dash-body 220ms steps(3) 1;
+    }
+
+    .fighter.is-dashing .leg-a {
+      animation: dash-front-leg 220ms steps(3) 1;
+    }
+
+    .fighter.is-dashing .leg-b {
+      animation: dash-back-leg 220ms steps(3) 1;
+    }
+
+    .fighter.is-hit .head,
+    .fighter.is-hit .torso {
+      animation: hit-flash 220ms steps(2) 1;
+    }
+
+    .fighter.is-dead {
+      opacity: .45;
+      filter: grayscale(.8) drop-shadow(0 8px 0 rgba(40, 25, 20, .35));
+    }
+
+    @keyframes head-bob {
+      0%, 100% { top: 4%; }
+      50% { top: 6%; }
+    }
+
+    @keyframes torso-bob {
+      0%, 100% { top: 25%; }
+      50% { top: 27%; }
+    }
+
+    @keyframes arm-step {
+      0%, 100% { top: 38%; transform: rotate(-90deg); }
+      50% { top: 40%; transform: rotate(-82deg); }
+    }
+
+    @keyframes sword-step {
+      0%, 100% { top: 42%; transform: rotate(0deg); }
+      50% { top: 44%; transform: rotate(-2deg); }
+    }
+
+    @keyframes front-step {
+      0%, 100% { transform: rotate(26deg); }
+      50% { transform: rotate(-22deg); }
+    }
+
+    @keyframes back-step {
+      0%, 100% { transform: rotate(-26deg); }
+      50% { transform: rotate(20deg); }
+    }
+
+    @keyframes thrust-head {
+      0%, 100% { left: 34%; top: 4%; }
+      45%, 78% { left: 41%; top: 5%; }
+    }
+
+    @keyframes thrust-lean {
+      0%, 100% { left: 27%; top: 25%; }
+      45%, 78% { left: 35%; top: 26%; }
+    }
+
+    @keyframes thrust-arm {
+      0%, 100% { left: 55%; top: 38%; transform: rotate(-86deg); }
+      45%, 78% { left: 66%; top: 36%; transform: rotate(-92deg); }
+    }
+
+    @keyframes thrust-sword {
+      0%, 100% { left: 80%; top: 42%; transform: rotate(0deg); }
+      45%, 78% { left: 108%; top: 40%; transform: rotate(1deg); }
+    }
+
+    @keyframes dash-trail {
+      0% { opacity: .9; transform: translateX(0); }
+      100% { opacity: 0; transform: translateX(-22%); }
+    }
+
+    @keyframes dash-head {
+      0%, 100% { left: 34%; top: 4%; }
+      50% { left: 43%; top: 5%; }
+    }
+
+    @keyframes dash-body {
+      0%, 100% { left: 27%; top: 25%; }
+      50% { left: 37%; top: 27%; }
+    }
+
+    @keyframes dash-front-leg {
+      0%, 100% { transform: rotate(14deg); }
+      50% { transform: rotate(52deg); }
+    }
+
+    @keyframes dash-back-leg {
+      0%, 100% { transform: rotate(-22deg); }
+      50% { transform: rotate(-58deg); }
+    }
+
+    @keyframes hit-flash {
+      0%, 100% { filter: none; }
+      50% { filter: brightness(1.75) saturate(1.7); }
+    }
+
+    .hud {
+      left: 2%;
+      right: 2%;
+      top: 3%;
+      z-index: 25;
+      display: grid;
+      grid-template-columns: 1fr auto 1fr;
+      gap: 18px;
+      align-items: center;
+      font-size: clamp(10px, 1.4vw, 18px);
+      text-transform: uppercase;
+      letter-spacing: 0;
+      text-shadow: 2px 2px #2a1f1d;
+    }
+
+    .player-status {
+      display: grid;
+      gap: 6px;
+    }
+
+    .player-status.right {
+      justify-items: end;
+    }
+
+    .meter {
+      position: relative;
+      height: 18px;
+      width: 100%;
+      border: 3px solid #261d1b;
+      background: #4c352a;
+      box-shadow: 0 3px 0 rgba(0, 0, 0, .32);
+      overflow: hidden;
+      --hp-percent: 100%;
+    }
+
+    .meter span {
+      display: block;
+      height: 100%;
+      width: var(--hp-percent);
+      background:
+        repeating-linear-gradient(90deg, transparent 0 18px, rgba(255, 255, 255, .18) 18px 21px),
+        linear-gradient(90deg, #d54334, #f0b447);
+      transition: width 160ms steps(5);
+    }
+
+    .meter.right span {
+      margin-left: auto;
+      background:
+        repeating-linear-gradient(90deg, transparent 0 18px, rgba(255, 255, 255, .18) 18px 21px),
+        linear-gradient(90deg, #55b2cc, #5b79de);
+    }
+
+    .hp-label {
+      position: absolute;
+      inset: 0;
+      display: grid;
+      place-items: center;
+      color: #fff2c0;
+      font-size: clamp(9px, 1vw, 13px);
+      line-height: 1;
+      text-shadow: 2px 2px #241918;
+      pointer-events: none;
+    }
+
+    .lives {
+      display: flex;
+      gap: 6px;
+      min-height: 18px;
+    }
+
+    .player-status.right .lives {
+      flex-direction: row-reverse;
+    }
+
+    .heart {
+      color: #df3f3a;
+      font-size: clamp(14px, 1.6vw, 22px);
+      line-height: 1;
+      text-shadow: 2px 2px #241918;
+      transition: color 160ms steps(2), opacity 160ms steps(2), transform 160ms steps(2);
+    }
+
+    .heart.lost {
+      color: #4c352a;
+      opacity: .45;
+      transform: translateY(2px);
+    }
+
+    .round {
+      padding: 6px 12px;
+      background: #3d2a24;
+      border: 3px solid #221918;
+      box-shadow: 0 3px 0 rgba(0, 0, 0, .36);
+      white-space: nowrap;
+    }
+
+    .winner-banner {
+      position: absolute;
+      left: 50%;
+      top: 30%;
+      z-index: 28;
+      display: grid;
+      gap: 14px;
+      justify-items: center;
+      transform: translate(-50%, -50%);
+      padding: 12px 18px;
+      color: #fff2c0;
+      background: #3d2a24;
+      border: 4px solid #221918;
+      box-shadow: 0 5px 0 rgba(0, 0, 0, .42);
+      font-size: clamp(22px, 5vw, 58px);
+      line-height: 1;
+      text-transform: uppercase;
+      text-shadow: 3px 3px #241918;
+      white-space: nowrap;
+    }
+
+    .winner-banner.is-hidden {
+      display: none;
+    }
+
+    .winner-banner.no-replay .replay-button {
+      display: none;
+    }
+
+    .winner-message {
+      display: block;
+    }
+
+    .replay-button {
+      cursor: pointer;
+      padding: 8px 14px;
+      color: #fff2c0;
+      background: #7f5431;
+      border: 3px solid #221918;
+      box-shadow: 0 4px 0 rgba(0, 0, 0, .42);
+      font: inherit;
+      font-size: clamp(12px, 1.6vw, 20px);
+      line-height: 1;
+      text-transform: uppercase;
+      text-shadow: 2px 2px #241918;
+    }
+
+    .replay-button:hover,
+    .replay-button:focus-visible {
+      background: #9a6639;
+      outline: 2px solid #fff2c0;
+      outline-offset: 3px;
+    }
+
+    .replay-button:active {
+      transform: translateY(3px);
+      box-shadow: 0 1px 0 rgba(0, 0, 0, .42);
+    }
+
+    .game-frame.ui-mode .fighter,
+    .game-frame.ui-mode .hud,
+    .game-frame.ui-mode .platform {
+      display: none !important;
+    }
+
+    .main-menu,
+    .settings-menu,
+    .help-menu,
+    .map-select {
+      position: absolute;
+      inset: 0;
+      z-index: 45;
+      display: grid;
+      align-content: center;
+      gap: 18px;
+      padding: 5%;
+      background: rgba(18, 16, 17, .82);
+      color: #fff2c0;
+      text-align: center;
+      text-shadow: 3px 3px #241918;
+    }
+
+    .main-menu.is-hidden,
+    .settings-menu.is-hidden,
+    .help-menu.is-hidden,
+    .map-select.is-hidden {
+      display: none;
+    }
+
+    .main-menu h1,
+    .settings-menu h1,
+    .help-menu h1,
+    .map-select h1 {
+      margin: 0;
+      font-size: clamp(24px, 5vw, 64px);
+      line-height: 1;
+      text-transform: lowercase;
+    }
+
+    .main-menu h1 {
+      font-size: clamp(36px, 8vw, 92px);
+      text-transform: none;
+    }
+
+    .settings-menu h1,
+    .help-menu h1 {
+      text-transform: none;
+    }
+
+    .menu-actions,
+    .settings-panel,
+    .help-panel {
+      display: grid;
+      gap: 12px;
+      justify-items: center;
+    }
+
+    .menu-button {
+      cursor: pointer;
+      min-width: min(100%, 340px);
+      padding: 12px 18px;
+      color: #fff2c0;
+      background: #33251f;
+      border: 4px solid #1c1717;
+      box-shadow: 0 6px 0 rgba(0, 0, 0, .48);
+      font: inherit;
+      font-size: clamp(14px, 2vw, 26px);
+      line-height: 1;
+      text-transform: uppercase;
+      text-shadow: 2px 2px #241918;
+    }
+
+    .menu-button:hover,
+    .menu-button:focus-visible {
+      background: #4c352a;
+      outline: 2px solid #fff2c0;
+      outline-offset: 4px;
+    }
+
+    .menu-button:active {
+      transform: translateY(3px);
+      box-shadow: 0 3px 0 rgba(0, 0, 0, .48);
+    }
+
+    .volume-control {
+      display: grid;
+      gap: 10px;
+      width: min(100%, 380px);
+      padding: 14px;
+      background: #33251f;
+      border: 4px solid #1c1717;
+      box-shadow: 0 6px 0 rgba(0, 0, 0, .48);
+      text-transform: uppercase;
+    }
+
+    .volume-control input {
+      width: 100%;
+      accent-color: #f7d880;
+    }
+
+    .help-panel {
+      width: min(100%, 580px);
+      justify-self: center;
+      padding: 16px;
+      background: #33251f;
+      border: 4px solid #1c1717;
+      box-shadow: 0 6px 0 rgba(0, 0, 0, .48);
+      text-align: left;
+      text-transform: uppercase;
+    }
+
+    .help-panel p {
+      justify-self: stretch;
+      margin: 0;
+      color: #f7d880;
+      font-size: clamp(13px, 1.7vw, 20px);
+      line-height: 1.45;
+    }
+
+    .help-panel strong {
+      color: #fff2c0;
+    }
+
+    .map-result {
+      min-height: 1.1em;
+      margin: 0;
+      color: #f7d880;
+      font-size: clamp(14px, 2vw, 28px);
+      line-height: 1.1;
+      text-transform: uppercase;
+    }
+
+    .map-options {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 14px;
+    }
+
+    .map-option {
+      cursor: pointer;
+      display: grid;
+      gap: 8px;
+      padding: 8px;
+      color: #fff2c0;
+      background: #33251f;
+      border: 4px solid #1c1717;
+      box-shadow: 0 6px 0 rgba(0, 0, 0, .48);
+      font: inherit;
+      font-size: clamp(12px, 1.6vw, 20px);
+      line-height: 1.1;
+      text-transform: uppercase;
+      text-shadow: 2px 2px #241918;
+    }
+
+    .map-option:hover,
+    .map-option:focus-visible {
+      background: #4c352a;
+      outline: 2px solid #fff2c0;
+      outline-offset: 4px;
+    }
+
+    .map-preview {
+      position: relative;
+      aspect-ratio: 16 / 9;
+      overflow: hidden;
+      border: 3px solid #1c1717;
+      image-rendering: pixelated;
+    }
+
+    .preview-weizen {
+      background:
+        radial-gradient(13% 22% at 14% 18%, #f7d880 0 42%, transparent 43%),
+        radial-gradient(72% 48% at 25% 79%, #75633b 0 46%, transparent 47%),
+        radial-gradient(72% 48% at 72% 82%, #8e733c 0 48%, transparent 49%),
+        linear-gradient(#6fb1c6 0 28%, #e7a35d 58%, #f3ce79 76%, #a7662b 100%);
+    }
+
+    .preview-weizen::after {
+      content: "";
+      position: absolute;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      height: 36%;
+      background:
+        repeating-linear-gradient(90deg, transparent 0 10px, rgba(83, 50, 23, .42) 10px 12px),
+        linear-gradient(#e0b95d, #c89135 58%, #7f4c25);
+    }
+
+    .preview-ashigaru {
+      background:
+        radial-gradient(11% 18% at 78% 18%, rgba(255, 226, 154, .82) 0 42%, transparent 43%),
+        repeating-linear-gradient(90deg, transparent 0 18px, rgba(28, 65, 47, .72) 18px 24px, transparent 24px 62px),
+        linear-gradient(#24345f 0 22%, #6f456a 52%, #c57949 78%, #2e241a 100%);
+    }
+
+    .preview-ashigaru::after {
+      content: "";
+      position: absolute;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      height: 26%;
+      background: linear-gradient(#36532d 0 22%, #283722 23% 63%, #1a2218 64%);
+    }
+
+    .preview-neo {
+      background:
+        radial-gradient(18% 24% at 73% 18%, rgba(104, 236, 255, .3) 0 42%, transparent 43%),
+        linear-gradient(#080924 0 30%, #222a63 62%, #3d214f 82%, #0a0d1c 100%);
+    }
+
+    .preview-neo::after {
+      content: "";
+      position: absolute;
+      left: 0;
+      right: 0;
+      bottom: 12%;
+      height: 52%;
+      background:
+        repeating-linear-gradient(90deg, transparent 0 28px, rgba(104, 236, 255, .78) 28px 32px, transparent 32px 56px),
+        linear-gradient(90deg, transparent 0 4%, #101733 4% 12%, transparent 12% 15%, #16224a 15% 25%, transparent 25% 29%, #0f1838 29% 40%, transparent 40% 44%, #19295a 44% 58%, transparent 58% 62%, #121c3f 62% 74%, transparent 74% 77%, #1c2a5f 77% 89%, transparent 89% 100%);
+      clip-path: polygon(0 54%, 4% 54%, 4% 27%, 12% 27%, 12% 48%, 16% 48%, 16% 12%, 25% 12%, 25% 42%, 30% 42%, 30% 5%, 39% 5%, 39% 52%, 45% 52%, 45% 18%, 58% 18%, 58% 46%, 64% 46%, 64% 0, 74% 0, 74% 38%, 79% 38%, 79% 14%, 89% 14%, 89% 56%, 100% 56%, 100% 100%, 0 100%);
+    }
+
+    @media (max-width: 720px) {
+      .game-frame {
+        border-width: 4px;
+      }
+
+      .platform.main {
+        left: 8%;
+        right: 8%;
+      }
+
+      .windmill.right {
+        right: 7%;
+      }
+
+      .windmill.left {
+        left: 9%;
+      }
+
+      .hud {
+        gap: 8px;
+      }
+
+      .round {
+        padding: 5px 8px;
+      }
+
+      .lives {
+        gap: 3px;
+      }
+
+      .map-options {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="game-frame map-weizen" aria-label="16-bit fencing game">
+    <div class="ashigaru-scene" aria-hidden="true"></div>
+    <div class="neo-scene" aria-hidden="true"></div>
+
+    <div class="sun"></div>
+    <div class="clouds"></div>
+    <div class="hills"></div>
+    <div class="distant-grain"></div>
+
+    <section class="windmill left">
+      <div class="roof"></div>
+      <div class="tower"></div>
+      <div class="door"></div>
+      <div class="blades">
+        <div class="blade-a"></div>
+        <div class="blade-b"></div>
+        <div class="hub"></div>
+      </div>
+    </section>
+
+    <section class="windmill small far">
+      <div class="roof"></div>
+      <div class="tower"></div>
+      <div class="door"></div>
+      <div class="blades">
+        <div class="blade-a"></div>
+        <div class="blade-b"></div>
+        <div class="hub"></div>
+      </div>
+    </section>
+
+    <section class="windmill right">
+      <div class="roof"></div>
+      <div class="tower"></div>
+      <div class="door"></div>
+      <div class="blades">
+        <div class="blade-a"></div>
+        <div class="blade-b"></div>
+        <div class="hub"></div>
+      </div>
+    </section>
+
+    <div class="field"></div>
+    <div class="fence"></div>
+
+    <div class="platform left"></div>
+    <div class="platform mid"></div>
+    <div class="platform right"></div>
+    <div class="platform main"></div>
+
+    <div class="fighter one" aria-hidden="true">
+      <div class="head"></div>
+      <div class="torso"></div>
+      <div class="arm"></div>
+      <div class="sword"><span class="blade"></span></div>
+      <div class="leg-a"></div>
+      <div class="leg-b"></div>
+    </div>
+
+    <div class="fighter two" aria-hidden="true">
+      <div class="head"></div>
+      <div class="torso"></div>
+      <div class="arm"></div>
+      <div class="sword"><span class="blade"></span></div>
+      <div class="leg-a"></div>
+      <div class="leg-b"></div>
+    </div>
+
+    <div class="hud">
+      <div class="player-status left">
+        <div class="meter left"><span></span><strong class="hp-label">P1 100 HP</strong></div>
+        <div class="lives left" aria-label="Player 1 lives">
+          <span class="heart">&#9829;</span>
+          <span class="heart">&#9829;</span>
+          <span class="heart">&#9829;</span>
+        </div>
+      </div>
+      <div class="round">Dawn Duel</div>
+      <div class="player-status right">
+        <div class="meter right"><span></span><strong class="hp-label">P2 100 HP</strong></div>
+        <div class="lives right" aria-label="Player 2 lives">
+          <span class="heart">&#9829;</span>
+          <span class="heart">&#9829;</span>
+          <span class="heart">&#9829;</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="winner-banner is-hidden" aria-live="polite">
+      <span class="winner-message"></span>
+      <button class="replay-button" type="button">Replay</button>
+    </div>
+
+    <section class="main-menu" aria-label="main menu">
+      <h1>Blades of Steel</h1>
+      <div class="menu-actions">
+        <button class="menu-button singleplayer-button" type="button">Singleplayer Mode</button>
+        <button class="menu-button settings-button" type="button">Settings</button>
+        <button class="menu-button help-button" type="button">Help</button>
+      </div>
+    </section>
+
+    <section class="settings-menu is-hidden" aria-label="settings">
+      <h1>Settings</h1>
+      <div class="settings-panel">
+        <label class="volume-control">
+          <span>Sound Effect Volume <strong class="volume-value">65%</strong></span>
+          <input class="volume-slider" type="range" min="0" max="100" value="65" />
+        </label>
+        <button class="menu-button back-menu-button" type="button">Back</button>
+      </div>
+    </section>
+
+    <section class="help-menu is-hidden" aria-label="help">
+      <h1>Help</h1>
+      <div class="help-panel">
+        <p><strong>Player 1:</strong> A and D move, W jumps, W again double jumps, E attacks, and R dashes.</p>
+        <p><strong>Player 2:</strong> Left and Right arrows move, Up jumps, Up again double jumps, Enter attacks, and / dashes.</p>
+        <p>Each sword hit deals 20 damage. Dashing briefly makes you invulnerable.</p>
+        <button class="menu-button help-back-button" type="button">Back</button>
+      </div>
+    </section>
+
+    <section class="map-select is-hidden" aria-label="select map">
+      <h1>select map</h1>
+      <p class="map-result" aria-live="polite"></p>
+      <div class="map-options">
+        <button class="map-option" type="button" data-map="weizen">
+          <span class="map-preview preview-weizen"></span>
+          <span>Weizen Farm</span>
+        </button>
+        <button class="map-option" type="button" data-map="ashigaru">
+          <span class="map-preview preview-ashigaru"></span>
+          <span>Ashigaru Forest</span>
+        </button>
+        <button class="map-option" type="button" data-map="neo">
+          <span class="map-preview preview-neo"></span>
+          <span>Neo York</span>
+        </button>
+      </div>
+      <button class="menu-button map-back-button" type="button">Back to Main Menu</button>
+    </section>
+
+    <i class="leaf"></i>
+    <i class="leaf"></i>
+    <i class="leaf"></i>
+    <i class="leaf"></i>
+    <i class="leaf"></i>
+    <div class="pixel-overlay"></div>
+    <div class="vignette"></div>
+  </main>
+
+  <script>
+    const gameFrame = document.querySelector(".game-frame");
+    const roundLabel = document.querySelector(".round");
+    const winnerBanner = document.querySelector(".winner-banner");
+    const winnerMessage = document.querySelector(".winner-message");
+    const replayButton = document.querySelector(".replay-button");
+    const mainMenu = document.querySelector(".main-menu");
+    const singleplayerButton = document.querySelector(".singleplayer-button");
+    const settingsButton = document.querySelector(".settings-button");
+    const helpButton = document.querySelector(".help-button");
+    const settingsMenu = document.querySelector(".settings-menu");
+    const backMenuButton = document.querySelector(".back-menu-button");
+    const helpMenu = document.querySelector(".help-menu");
+    const helpBackButton = document.querySelector(".help-back-button");
+    const volumeSlider = document.querySelector(".volume-slider");
+    const volumeValue = document.querySelector(".volume-value");
+    const mapSelect = document.querySelector(".map-select");
+    const mapResult = document.querySelector(".map-result");
+    const mapBackButton = document.querySelector(".map-back-button");
+    const mapButtons = [...document.querySelectorAll(".map-option")];
+    const players = [
+      {
+        el: document.querySelector(".fighter.one"),
+        hpBar: document.querySelector(".meter.left"),
+        hpLabel: document.querySelector(".meter.left .hp-label"),
+        lifeEls: [...document.querySelectorAll(".lives.left .heart")],
+        name: "P1",
+        label: "Player 1",
+        hp: 100,
+        maxHp: 100,
+        lives: 3,
+        leftKey: "KeyA",
+        rightKey: "KeyD",
+        jumpKey: "KeyW",
+        attackKey: "KeyE",
+        dashKey: "KeyR",
+        start: 0.33,
+        x: 0,
+        y: 0,
+        vy: 0,
+        grounded: false,
+        standingOn: null,
+        airJumpsUsed: 0,
+        facing: 1,
+        startFacing: 1,
+        isDead: false,
+        isAttacking: false,
+        isDashing: false,
+        attackStartedAt: 0,
+        attackReadyAt: 0,
+        hasHitThisSwing: false,
+        dashStartedAt: 0,
+        dashReadyAt: 0
+      },
+      {
+        el: document.querySelector(".fighter.two"),
+        hpBar: document.querySelector(".meter.right"),
+        hpLabel: document.querySelector(".meter.right .hp-label"),
+        lifeEls: [...document.querySelectorAll(".lives.right .heart")],
+        name: "P2",
+        label: "Player 2",
+        hp: 100,
+        maxHp: 100,
+        lives: 3,
+        leftKey: "ArrowLeft",
+        rightKey: "ArrowRight",
+        jumpKey: "ArrowUp",
+        attackKey: "Enter",
+        dashKey: "Slash",
+        start: 0.61,
+        x: 0,
+        y: 0,
+        vy: 0,
+        grounded: false,
+        standingOn: null,
+        airJumpsUsed: 0,
+        facing: -1,
+        startFacing: -1,
+        isDead: false,
+        isAttacking: false,
+        isDashing: false,
+        attackStartedAt: 0,
+        attackReadyAt: 0,
+        hasHitThisSwing: false,
+        dashStartedAt: 0,
+        dashReadyAt: 0
+      }
+    ];
+    const ATTACK_DAMAGE = 20;
+    const ATTACK_DURATION = 260;
+    const ATTACK_COOLDOWN = 520;
+    const ATTACK_ACTIVE_START = 80;
+    const ATTACK_ACTIVE_END = 190;
+    const GRAVITY = 1450;
+    const MAX_AIR_JUMPS = 1;
+    const STARTING_LIVES = 3;
+    const ROUND_RESET_DELAY = 900;
+    const WINNER_TO_MAP_DELAY = 3000;
+    const DASH_DURATION = 220;
+    const DASH_COOLDOWN = 850;
+    const SWING_SOUND_SRC = "assets/sword-swing.mp3";
+    let swingVolume = .65;
+    const swingSounds = Array.from({ length: 4 }, () => {
+      const audio = new Audio(SWING_SOUND_SRC);
+      audio.volume = swingVolume;
+      audio.preload = "auto";
+      return audio;
+    });
+    let nextSwingSound = 0;
+    const heldKeys = new Set();
+    const movementKeys = new Set(players.flatMap((player) => [player.leftKey, player.rightKey]));
+    const jumpKeys = new Map(players.map((player, index) => [player.jumpKey, index]));
+    const attackKeys = new Map(players.map((player, index) => [player.attackKey, index]));
+    const dashKeys = new Map(players.map((player, index) => [player.dashKey, index]));
+    const platformEls = [...document.querySelectorAll(".platform")];
+    const maps = {
+      weizen: {
+        id: "weizen",
+        name: "Weizen Farm",
+        className: "map-weizen",
+        roundTitle: "Dawn Duel",
+        voidKills: true,
+        spawnMode: "shared",
+        spawnPlatformId: "weizen-main",
+        platforms(now, frame) {
+          return [
+            { id: "weizen-left", className: "left", left: frame.width * .05, width: frame.width * .23, y: frame.height * .51, height: frame.height * .06 },
+            { id: "weizen-mid", className: "mid", left: frame.width * .4, width: frame.width * .2, y: frame.height * .64, height: frame.height * .05 },
+            { id: "weizen-right", className: "right", left: frame.width * .72, width: frame.width * .23, y: frame.height * .53, height: frame.height * .06 },
+            { id: "weizen-main", className: "main", left: frame.width * .16, width: frame.width * .68, y: frame.height * .29, height: frame.height * .07 }
+          ];
+        }
+      },
+      ashigaru: {
+        id: "ashigaru",
+        name: "Ashigaru Forest",
+        className: "map-ashigaru",
+        roundTitle: "Ashigaru Forest",
+        voidKills: false,
+        spawnMode: "shared",
+        spawnPlatformId: "ashigaru-ground",
+        platforms(now, frame) {
+          return [
+            { id: "ashigaru-ground", className: "ground", left: 0, width: frame.width, y: frame.height * .26, height: frame.height * .26, render: false }
+          ];
+        }
+      },
+      neo: {
+        id: "neo",
+        name: "Neo York",
+        className: "map-neo",
+        roundTitle: "Neo York",
+        voidKills: true,
+        spawnMode: "lower-pair",
+        platforms(now, frame) {
+          const centerX = frame.width * .5;
+          const centerY = frame.height * .47;
+          const radiusX = frame.width * .28;
+          const radiusY = frame.height * .19;
+          const width = frame.width * .26;
+          const height = frame.height * .055;
+          const rotation = now * .00028;
+          const bases = [210, 330, 90];
+
+          return bases.map((base, index) => {
+            const angle = base * Math.PI / 180 - rotation;
+            return {
+              id: `neo-${index}`,
+              className: "neo",
+              left: centerX + Math.cos(angle) * radiusX - width / 2,
+              width,
+              y: centerY + Math.sin(angle) * radiusY,
+              height
+            };
+          });
+        }
+      }
+    };
+    let currentMap = maps.weizen;
+    let menuOpen = true;
+    let settingsOpen = false;
+    let helpOpen = false;
+    let mapSelectOpen = false;
+    let gameOver = false;
+    let roundResetTimer = null;
+    let winnerTransitionTimer = null;
+
+    function clamp(value, min, max) {
+      return Math.min(Math.max(value, min), max);
+    }
+
+    function stageBounds() {
+      const frameWidth = gameFrame.clientWidth;
+      const fighterWidth = players[0].el.offsetWidth || frameWidth * 0.06;
+      return {
+        min: 0,
+        max: frameWidth - fighterWidth,
+        width: frameWidth
+      };
+    }
+
+    function frameSize() {
+      return {
+        width: gameFrame.clientWidth,
+        height: gameFrame.clientHeight
+      };
+    }
+
+    function mapPlatformRects(now = performance.now()) {
+      return currentMap.platforms(now, frameSize()).map((platform) => ({
+        ...platform,
+        right: platform.left + platform.width,
+        centerX: platform.left + platform.width / 2
+      }));
+    }
+
+    function renderPlatforms(platforms = mapPlatformRects()) {
+      const visiblePlatforms = platforms.filter((platform) => platform.render !== false);
+
+      platformEls.forEach((platformEl, index) => {
+        const platform = visiblePlatforms[index];
+
+        if (!platform) {
+          platformEl.style.display = "none";
+          return;
+        }
+
+        platformEl.className = `platform ${platform.className || ""}`;
+        platformEl.dataset.platformId = platform.id;
+        platformEl.style.display = "block";
+        platformEl.style.left = `${platform.left}px`;
+        platformEl.style.right = "auto";
+        platformEl.style.bottom = `${platform.y - platform.height}px`;
+        platformEl.style.width = `${platform.width}px`;
+        platformEl.style.height = `${platform.height}px`;
+      });
+    }
+
+    function drawPlayer(player) {
+      player.el.style.setProperty("--x", `${player.x}px`);
+      player.el.style.setProperty("--y", `${player.y}px`);
+      player.el.style.setProperty("--screen-y", `${-player.y}px`);
+      player.el.style.setProperty("--facing", player.facing);
+    }
+
+    function playerFootSpan(player) {
+      const fighterWidth = player.el.offsetWidth || gameFrame.clientWidth * 0.06;
+
+      return {
+        left: player.x + fighterWidth * 0.2,
+        right: player.x + fighterWidth * 0.8
+      };
+    }
+
+    function overlapsPlatform(player, platform) {
+      const feet = playerFootSpan(player);
+      return feet.right > platform.left && feet.left < platform.right;
+    }
+
+    function mainPlatform() {
+      const platforms = mapPlatformRects();
+      return platforms.find((platform) => platform.id === currentMap.spawnPlatformId) || platforms[0];
+    }
+
+    function spawnPlatforms(platforms = mapPlatformRects()) {
+      if (currentMap.spawnMode === "lower-pair") {
+        return [...platforms]
+          .sort((a, b) => a.y - b.y)
+          .slice(0, 2)
+          .sort((a, b) => a.left - b.left);
+      }
+
+      const platform = mainPlatform();
+      return [platform, platform];
+    }
+
+    function setMap(mapId) {
+      currentMap = maps[mapId] || maps.weizen;
+      gameFrame.classList.remove(...Object.values(maps).map((map) => map.className));
+      gameFrame.classList.add(currentMap.className);
+      renderPlatforms(mapPlatformRects());
+    }
+
+    function randomizeMenuBackground() {
+      const mapIds = Object.keys(maps);
+      setMap(mapIds[Math.floor(Math.random() * mapIds.length)]);
+    }
+
+    function setUiMode(active) {
+      gameFrame.classList.toggle("ui-mode", active);
+    }
+
+    function showMainMenu(randomizeBackground = false) {
+      menuOpen = true;
+      settingsOpen = false;
+      helpOpen = false;
+      mapSelectOpen = false;
+      gameOver = false;
+      heldKeys.clear();
+
+      if (randomizeBackground) {
+        randomizeMenuBackground();
+      }
+
+      setUiMode(true);
+      mainMenu.classList.remove("is-hidden");
+      settingsMenu.classList.add("is-hidden");
+      helpMenu.classList.add("is-hidden");
+      mapSelect.classList.add("is-hidden");
+      winnerBanner.classList.add("is-hidden");
+      winnerBanner.classList.remove("no-replay");
+      winnerMessage.textContent = "";
+      mapResult.textContent = "";
+      singleplayerButton.focus();
+    }
+
+    function showMapSelect() {
+      menuOpen = false;
+      settingsOpen = false;
+      helpOpen = false;
+      mapSelectOpen = true;
+      gameOver = false;
+      heldKeys.clear();
+      setUiMode(true);
+      mainMenu.classList.add("is-hidden");
+      settingsMenu.classList.add("is-hidden");
+      helpMenu.classList.add("is-hidden");
+      winnerBanner.classList.add("is-hidden");
+      winnerBanner.classList.remove("no-replay");
+      winnerMessage.textContent = "";
+      mapSelect.classList.remove("is-hidden");
+      mapButtons[0]?.focus();
+    }
+
+    function showSettings() {
+      menuOpen = false;
+      settingsOpen = true;
+      helpOpen = false;
+      mapSelectOpen = false;
+      heldKeys.clear();
+      setUiMode(true);
+      mainMenu.classList.add("is-hidden");
+      mapSelect.classList.add("is-hidden");
+      helpMenu.classList.add("is-hidden");
+      settingsMenu.classList.remove("is-hidden");
+      volumeSlider.focus();
+    }
+
+    function showHelp() {
+      menuOpen = false;
+      settingsOpen = false;
+      helpOpen = true;
+      mapSelectOpen = false;
+      heldKeys.clear();
+      setUiMode(true);
+      mainMenu.classList.add("is-hidden");
+      settingsMenu.classList.add("is-hidden");
+      mapSelect.classList.add("is-hidden");
+      helpMenu.classList.remove("is-hidden");
+      helpBackButton.focus();
+    }
+
+    function setSwingVolume(value) {
+      swingVolume = clamp(Number(value) / 100, 0, 1);
+      swingSounds.forEach((sound) => {
+        sound.volume = swingVolume;
+      });
+      volumeValue.textContent = `${Math.round(swingVolume * 100)}%`;
+    }
+
+    function selectMap(mapId) {
+      setMap(mapId);
+      menuOpen = false;
+      settingsOpen = false;
+      helpOpen = false;
+      mapSelectOpen = false;
+      setUiMode(false);
+      mainMenu.classList.add("is-hidden");
+      settingsMenu.classList.add("is-hidden");
+      helpMenu.classList.add("is-hidden");
+      mapSelect.classList.add("is-hidden");
+      resetMatch();
+    }
+
+    function jumpVelocity() {
+      return clamp(gameFrame.clientHeight * 1.28, 700, 980);
+    }
+
+    function dashSpeed() {
+      return clamp(gameFrame.clientWidth * 1.85, 950, 1600);
+    }
+
+    function movementDirection(player) {
+      return Number(heldKeys.has(player.rightKey)) - Number(heldKeys.has(player.leftKey));
+    }
+
+    function playSwingSound() {
+      const sound = swingSounds[nextSwingSound];
+      nextSwingSound = (nextSwingSound + 1) % swingSounds.length;
+      sound.currentTime = 0;
+      sound.volume = swingVolume;
+      sound.play().catch(() => {});
+    }
+
+    function startJump(playerIndex) {
+      const player = players[playerIndex];
+
+      if (!player || player.isDead || player.isDashing || gameOver || roundResetTimer) {
+        return;
+      }
+
+      if (!player.grounded && player.airJumpsUsed >= MAX_AIR_JUMPS) {
+        return;
+      }
+
+      if (!player.grounded) {
+        player.airJumpsUsed += 1;
+      }
+
+      player.vy = jumpVelocity();
+      player.grounded = false;
+      player.standingOn = null;
+      player.el.classList.remove("is-walking");
+    }
+
+    function startDash(playerIndex) {
+      const player = players[playerIndex];
+      const now = performance.now();
+
+      if (!player || player.isDead || gameOver || roundResetTimer || player.isAttacking || player.isDashing || now < player.dashReadyAt) {
+        return;
+      }
+
+      const direction = movementDirection(player);
+
+      if (direction !== 0) {
+        player.facing = direction;
+      }
+
+      player.isDashing = true;
+      player.dashStartedAt = now;
+      player.dashReadyAt = now + DASH_COOLDOWN;
+      player.el.classList.remove("is-walking", "is-hit");
+      void player.el.offsetWidth;
+      player.el.classList.add("is-dashing");
+    }
+
+    function setPlayerHp(player, hp) {
+      player.hp = clamp(hp, 0, player.maxHp);
+      const hpPercent = (player.hp / player.maxHp) * 100;
+      player.hpBar.style.setProperty("--hp-percent", `${hpPercent}%`);
+      player.hpLabel.textContent = `${player.name} ${Math.round(player.hp)} HP`;
+    }
+
+    function drawLives(player) {
+      player.lifeEls.forEach((heart, index) => {
+        heart.classList.toggle("lost", index >= player.lives);
+      });
+    }
+
+    function setPlayerDefeated(player) {
+      player.isDead = true;
+      player.grounded = false;
+      player.isAttacking = false;
+      player.isDashing = false;
+      player.el.classList.remove("is-attacking", "is-dashing", "is-walking");
+      player.el.classList.add("is-dead");
+    }
+
+    function showWinner(winner) {
+      gameOver = true;
+      heldKeys.clear();
+      roundLabel.textContent = "Match Over";
+      winnerMessage.textContent = `${winner.label} wins!`;
+      winnerBanner.classList.add("no-replay");
+      winnerBanner.classList.remove("is-hidden");
+      mapResult.textContent = "";
+      menuOpen = false;
+      settingsOpen = false;
+      helpOpen = false;
+      mapSelectOpen = false;
+      setUiMode(false);
+      mainMenu.classList.add("is-hidden");
+      settingsMenu.classList.add("is-hidden");
+      helpMenu.classList.add("is-hidden");
+      mapSelect.classList.add("is-hidden");
+
+      winnerTransitionTimer = window.setTimeout(() => {
+        winnerTransitionTimer = null;
+        winnerBanner.classList.add("is-hidden");
+        winnerMessage.textContent = "";
+        showMapSelect();
+        mapResult.textContent = `${winner.label} wins!`;
+      }, WINNER_TO_MAP_DELAY);
+    }
+
+    function scheduleRoundRestart() {
+      heldKeys.clear();
+      roundResetTimer = window.setTimeout(() => {
+        roundResetTimer = null;
+        resetRound();
+      }, ROUND_RESET_DELAY);
+    }
+
+    function handlePlayerDeath(playerIndex) {
+      const loser = players[playerIndex];
+      const winner = players[playerIndex === 0 ? 1 : 0];
+
+      if (!loser || loser.isDead || gameOver || roundResetTimer) {
+        return;
+      }
+
+      setPlayerHp(loser, 0);
+      setPlayerDefeated(loser);
+      loser.lives = Math.max(0, loser.lives - 1);
+      drawLives(loser);
+
+      if (loser.lives <= 0) {
+        showWinner(winner);
+        return;
+      }
+
+      roundLabel.textContent = `${loser.name} Down`;
+      scheduleRoundRestart();
+    }
+
+    function killPlayer(playerIndex) {
+      const player = players[playerIndex];
+
+      if (!player || player.isDead || gameOver || roundResetTimer) {
+        return;
+      }
+
+      flashHit(player);
+      handlePlayerDeath(playerIndex);
+    }
+
+    function flashHit(player) {
+      player.el.classList.remove("is-hit");
+      void player.el.offsetWidth;
+      player.el.classList.add("is-hit");
+      window.setTimeout(() => player.el.classList.remove("is-hit"), 220);
+    }
+
+    function damagePlayer(playerIndex, damageAmount) {
+      const player = players[playerIndex];
+
+      if (!player || player.isDead || player.isDashing || gameOver || roundResetTimer) {
+        return;
+      }
+
+      setPlayerHp(player, player.hp - damageAmount);
+      flashHit(player);
+
+      if (player.hp <= 0) {
+        handlePlayerDeath(playerIndex);
+      }
+    }
+
+    function attackHitLands(attacker, defender) {
+      const frameWidth = gameFrame.clientWidth;
+      const attackerWidth = attacker.el.offsetWidth || frameWidth * 0.06;
+      const defenderWidth = defender.el.offsetWidth || frameWidth * 0.06;
+      const attackerHeight = attacker.el.offsetHeight || gameFrame.clientHeight * 0.19;
+      const defenderHeight = defender.el.offsetHeight || gameFrame.clientHeight * 0.19;
+      const reach = clamp(frameWidth * 0.14, 105, 180);
+      const attackOrigin = attacker.x + (attacker.facing === 1 ? attackerWidth * 0.82 : attackerWidth * 0.18);
+      const attackEnd = attackOrigin + attacker.facing * reach;
+      const defenderLeft = defender.x;
+      const defenderRight = defender.x + defenderWidth;
+      const verticalOverlap = attacker.y + attackerHeight * 0.72 > defender.y && attacker.y < defender.y + defenderHeight * 0.72;
+
+      if (!verticalOverlap) {
+        return false;
+      }
+
+      if (attacker.facing === 1) {
+        return attackEnd >= defenderLeft && attackOrigin <= defenderRight;
+      }
+
+      return attackEnd <= defenderRight && attackOrigin >= defenderLeft;
+    }
+
+    function tryAttackHit(attackerIndex) {
+      const attacker = players[attackerIndex];
+      const defenderIndex = attackerIndex === 0 ? 1 : 0;
+      const defender = players[defenderIndex];
+
+      if (!attacker || !defender || defender.hp <= 0 || !attackHitLands(attacker, defender)) {
+        return false;
+      }
+
+      damagePlayer(defenderIndex, ATTACK_DAMAGE);
+      return true;
+    }
+
+    function startAttack(playerIndex) {
+      const player = players[playerIndex];
+      const now = performance.now();
+
+      if (!player || player.isDead || gameOver || roundResetTimer || player.isDashing || player.isAttacking || now < player.attackReadyAt) {
+        return;
+      }
+
+      player.isAttacking = true;
+      player.attackStartedAt = now;
+      player.attackReadyAt = now + ATTACK_COOLDOWN;
+      player.hasHitThisSwing = false;
+      player.el.classList.remove("is-attacking", "is-walking");
+      void player.el.offsetWidth;
+      player.el.classList.add("is-attacking");
+      playSwingSound();
+
+      window.setTimeout(() => {
+        player.isAttacking = false;
+        player.el.classList.remove("is-attacking");
+      }, ATTACK_DURATION);
+    }
+
+    function resetRound() {
+      heldKeys.clear();
+      roundLabel.textContent = currentMap.roundTitle;
+
+      players.forEach((player) => {
+        setPlayerHp(player, player.maxHp);
+        player.isDead = false;
+        player.y = 0;
+        player.vy = 0;
+        player.grounded = false;
+        player.standingOn = null;
+        player.airJumpsUsed = 0;
+        player.facing = player.startFacing;
+        player.isAttacking = false;
+        player.isDashing = false;
+        player.attackStartedAt = 0;
+        player.attackReadyAt = 0;
+        player.hasHitThisSwing = false;
+        player.dashStartedAt = 0;
+        player.dashReadyAt = 0;
+        player.el.classList.remove("is-attacking", "is-dashing", "is-dead", "is-hit", "is-walking");
+      });
+      placePlayers();
+    }
+
+    function resetMatch() {
+      if (roundResetTimer) {
+        window.clearTimeout(roundResetTimer);
+        roundResetTimer = null;
+      }
+
+      if (winnerTransitionTimer) {
+        window.clearTimeout(winnerTransitionTimer);
+        winnerTransitionTimer = null;
+      }
+
+      gameOver = false;
+      winnerMessage.textContent = "";
+      winnerBanner.classList.add("is-hidden");
+      winnerBanner.classList.remove("no-replay");
+      replayButton.blur();
+      mapResult.textContent = "";
+
+      players.forEach((player) => {
+        player.lives = STARTING_LIVES;
+        drawLives(player);
+      });
+
+      resetRound();
+    }
+
+    function placePlayers() {
+      const bounds = stageBounds();
+      const platforms = mapPlatformRects();
+      const spawns = spawnPlatforms(platforms);
+      renderPlatforms(platforms);
+
+      players.forEach((player, index) => {
+        const platform = spawns[index] || spawns[0] || mainPlatform();
+        const fighterWidth = player.el.offsetWidth || bounds.width * .06;
+        player.x = currentMap.spawnMode === "lower-pair"
+          ? clamp(platform.centerX - fighterWidth / 2, bounds.min, bounds.max)
+          : clamp(bounds.width * player.start, bounds.min, bounds.max);
+        player.y = platform.y;
+        player.vy = 0;
+        player.grounded = true;
+        player.standingOn = platform.id;
+        player.airJumpsUsed = 0;
+        player.facing = player.startFacing;
+        drawPlayer(player);
+      });
+    }
+
+    window.addEventListener("keydown", (event) => {
+      const targetElement = event.target instanceof Element ? event.target : null;
+
+      if ((menuOpen || settingsOpen || helpOpen) && targetElement?.closest("button") && (event.code === "Enter" || event.code === "Space")) {
+        return;
+      }
+
+      if (settingsOpen && event.target === volumeSlider) {
+        return;
+      }
+
+      if (gameOver && event.target === replayButton && (event.code === "Enter" || event.code === "Space")) {
+        return;
+      }
+
+      if (mapSelectOpen && targetElement?.closest("button") && (event.code === "Enter" || event.code === "Space")) {
+        return;
+      }
+
+      if (menuOpen || settingsOpen || helpOpen || mapSelectOpen || gameOver || roundResetTimer) {
+        if (movementKeys.has(event.code) || jumpKeys.has(event.code) || attackKeys.has(event.code) || dashKeys.has(event.code)) {
+          event.preventDefault();
+        }
+
+        return;
+      }
+
+      if (dashKeys.has(event.code)) {
+        if (!event.repeat) {
+          startDash(dashKeys.get(event.code));
+        }
+
+        event.preventDefault();
+        return;
+      }
+
+      if (attackKeys.has(event.code)) {
+        if (!event.repeat) {
+          startAttack(attackKeys.get(event.code));
+        }
+
+        event.preventDefault();
+        return;
+      }
+
+      if (jumpKeys.has(event.code)) {
+        if (!event.repeat) {
+          startJump(jumpKeys.get(event.code));
+        }
+
+        event.preventDefault();
+        return;
+      }
+
+      if (!movementKeys.has(event.code)) {
+        return;
+      }
+
+      heldKeys.add(event.code);
+      event.preventDefault();
+    });
+
+    window.addEventListener("keyup", (event) => {
+      if (menuOpen || settingsOpen || helpOpen || mapSelectOpen || gameOver || roundResetTimer) {
+        return;
+      }
+
+      if (dashKeys.has(event.code)) {
+        event.preventDefault();
+        return;
+      }
+
+      if (jumpKeys.has(event.code)) {
+        event.preventDefault();
+        return;
+      }
+
+      if (!movementKeys.has(event.code)) {
+        return;
+      }
+
+      heldKeys.delete(event.code);
+      event.preventDefault();
+    });
+
+    replayButton.addEventListener("click", resetMatch);
+    singleplayerButton.addEventListener("click", () => showMapSelect());
+    settingsButton.addEventListener("click", () => showSettings());
+    helpButton.addEventListener("click", () => showHelp());
+    backMenuButton.addEventListener("click", () => showMainMenu(false));
+    helpBackButton.addEventListener("click", () => showMainMenu(false));
+    mapBackButton.addEventListener("click", () => showMainMenu(false));
+    volumeSlider.addEventListener("input", () => setSwingVolume(volumeSlider.value));
+
+    mapButtons.forEach((button) => {
+      button.addEventListener("click", () => selectMap(button.dataset.map));
+    });
+
+    window.addEventListener("blur", () => {
+      heldKeys.clear();
+      players.forEach((player) => {
+        player.isAttacking = false;
+        player.isDashing = false;
+        player.el.classList.remove("is-attacking", "is-dashing", "is-walking");
+      });
+    });
+
+    window.addEventListener("resize", () => {
+      if (menuOpen || settingsOpen || helpOpen || mapSelectOpen || gameOver || roundResetTimer) {
+        renderPlatforms(mapPlatformRects());
+        players.forEach((player) => drawPlayer(player));
+        return;
+      }
+
+      placePlayers();
+    });
+
+    let previousTime = performance.now();
+
+    function update(now) {
+      const delta = Math.min((now - previousTime) / 1000, 0.05);
+      previousTime = now;
+
+      const bounds = stageBounds();
+      const speed = clamp(bounds.width * 0.22, 150, 260);
+      const burstSpeed = dashSpeed();
+      const platforms = mapPlatformRects(now);
+      const previousPlatforms = mapPlatformRects(now - delta * 1000);
+      renderPlatforms(platforms);
+
+      if (menuOpen || settingsOpen || helpOpen || mapSelectOpen || gameOver || roundResetTimer) {
+        players.forEach((player) => drawPlayer(player));
+        requestAnimationFrame(update);
+        return;
+      }
+
+      players.forEach((player, index) => {
+        if (player.isDead) {
+          drawPlayer(player);
+          return;
+        }
+
+        const movingLeft = heldKeys.has(player.leftKey);
+        const movingRight = heldKeys.has(player.rightKey);
+        const direction = Number(movingRight) - Number(movingLeft);
+
+        if (player.isDashing) {
+          const dashElapsed = now - player.dashStartedAt;
+
+          if (dashElapsed >= DASH_DURATION) {
+            player.isDashing = false;
+            player.el.classList.remove("is-dashing");
+          } else {
+            player.x = clamp(player.x + player.facing * burstSpeed * delta, bounds.min, bounds.max);
+            player.el.classList.remove("is-walking");
+          }
+        }
+
+        if (!player.isDashing && direction !== 0) {
+          player.x = clamp(player.x + direction * speed * delta, bounds.min, bounds.max);
+          player.facing = direction;
+          player.el.classList.toggle("is-walking", !player.isAttacking);
+        } else if (!player.isDashing) {
+          player.el.classList.remove("is-walking");
+        }
+
+        if (player.grounded) {
+          const support = platforms.find((platform) => platform.id === player.standingOn && overlapsPlatform(player, platform))
+            || platforms.find((platform) => Math.abs(player.y - platform.y) < 4 && overlapsPlatform(player, platform));
+
+          if (support) {
+            const previousSupport = previousPlatforms.find((platform) => platform.id === support.id);
+
+            if (previousSupport) {
+              player.x = clamp(player.x + support.centerX - previousSupport.centerX, bounds.min, bounds.max);
+            }
+
+            player.y = support.y;
+            player.vy = 0;
+            player.standingOn = support.id;
+            player.airJumpsUsed = 0;
+          } else {
+            player.grounded = false;
+            player.standingOn = null;
+          }
+        }
+
+        if (!player.grounded) {
+          const previousY = player.y;
+          player.vy -= GRAVITY * delta;
+          player.y += player.vy * delta;
+
+          if (player.vy <= 0) {
+            const landingPlatform = platforms
+              .filter((platform) => previousY >= platform.y && player.y <= platform.y && overlapsPlatform(player, platform))
+              .sort((a, b) => b.y - a.y)[0];
+
+            if (landingPlatform) {
+              player.y = landingPlatform.y;
+              player.vy = 0;
+              player.grounded = true;
+              player.standingOn = landingPlatform.id;
+              player.airJumpsUsed = 0;
+            }
+          }
+        }
+
+        if (player.isAttacking) {
+          const attackElapsed = now - player.attackStartedAt;
+
+          if (!player.hasHitThisSwing && attackElapsed >= ATTACK_ACTIVE_START && attackElapsed <= ATTACK_ACTIVE_END) {
+            player.hasHitThisSwing = tryAttackHit(index);
+          }
+        }
+
+        if (currentMap.voidKills && player.y < 0) {
+          killPlayer(index);
+        }
+
+        drawPlayer(player);
+      });
+
+      requestAnimationFrame(update);
+    }
+
+    setSwingVolume(volumeSlider.value);
+    showMainMenu(true);
+    requestAnimationFrame(update);
+
+    window.attackPlayer = startAttack;
+    window.damagePlayer = damagePlayer;
+    window.resetMatch = resetMatch;
+  </script>
+</body>
+</html>
