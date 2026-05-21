@@ -1735,6 +1735,7 @@
     const MULTIPLAYER_ROOM_PREFIX = "code-lobby-v2";
     const MULTIPLAYER_MAP_ID = "weizen";
     const SWING_SOUND_SRC = "assets/sword-swing.mp3";
+    const LIFE_LOST_SOUND_SRC = "assets/life-lost.mp3";
     let swingVolume = .65;
     const swingSounds = Array.from({ length: 4 }, () => {
       const audio = new Audio(SWING_SOUND_SRC);
@@ -1742,7 +1743,14 @@
       audio.preload = "auto";
       return audio;
     });
+    const lifeLostSounds = Array.from({ length: 3 }, () => {
+      const audio = new Audio(LIFE_LOST_SOUND_SRC);
+      audio.volume = swingVolume;
+      audio.preload = "auto";
+      return audio;
+    });
     let nextSwingSound = 0;
+    let nextLifeLostSound = 0;
     const heldKeys = new Set();
     const multiplayerInputs = players.map(() => ({ left: false, right: false }));
     let movementKeys = new Set();
@@ -2262,6 +2270,9 @@
       swingSounds.forEach((sound) => {
         sound.volume = swingVolume;
       });
+      lifeLostSounds.forEach((sound) => {
+        sound.volume = swingVolume;
+      });
       volumeValue.textContent = `${Math.round(swingVolume * 100)}%`;
     }
 
@@ -2309,6 +2320,14 @@
     function playSwingSound() {
       const sound = swingSounds[nextSwingSound];
       nextSwingSound = (nextSwingSound + 1) % swingSounds.length;
+      sound.currentTime = 0;
+      sound.volume = swingVolume;
+      sound.play().catch(() => {});
+    }
+
+    function playLifeLostSound() {
+      const sound = lifeLostSounds[nextLifeLostSound];
+      nextLifeLostSound = (nextLifeLostSound + 1) % lifeLostSounds.length;
       sound.currentTime = 0;
       sound.volume = swingVolume;
       sound.play().catch(() => {});
@@ -2439,6 +2458,7 @@
       setPlayerDefeated(loser);
       loser.lives = Math.max(0, loser.lives - 1);
       drawLives(loser);
+      playLifeLostSound();
 
       if (loser.lives <= 0) {
         showWinner(winner);
