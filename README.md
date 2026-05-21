@@ -11,6 +11,7 @@ https://szhang2187.github.io/BladesOfSteel/
 ## Features
 
 - Local two-player sword combat
+- Peer-to-peer multiplayer matchmaking
 - HP bars and three-life match system
 - Sword attacks, dashing, jump, and double jump
 - Dash invulnerability
@@ -23,6 +24,8 @@ https://szhang2187.github.io/BladesOfSteel/
   - Neo York
 
 ## Controls
+
+Singleplayer:
 
 Player 1:
 
@@ -40,9 +43,23 @@ Player 2:
 - Attack: `Enter`
 - Dash: `/`
 
+Multiplayer:
+
+Each player uses the same controls on their own computer:
+
+- Move: `A` / `D`
+- Jump: `Space`
+- Double jump: press `Space` again in the air
+- Attack: `E`
+- Dash: `R`
+
 ## How To Win
 
 Each player starts with 100 HP and three lives. Sword hits deal 20 damage. When a player loses all HP or falls into the void on maps that allow it, they lose a life. The first player to remove all three of the other player's lives wins.
+
+## Multiplayer Notes
+
+Multiplayer uses browser peer-to-peer networking through Trystero. The site can stay hosted on GitHub Pages, while the active match data is sent directly between players' browsers. Both players need to be online and looking for a match at the same time.
 
 ## Run Locally
 

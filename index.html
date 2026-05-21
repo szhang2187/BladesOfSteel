@@ -942,6 +942,8 @@
     .main-menu,
     .settings-menu,
     .help-menu,
+    .name-menu,
+    .matchmaking-menu,
     .map-select {
       position: absolute;
       inset: 0;
@@ -959,6 +961,8 @@
     .main-menu.is-hidden,
     .settings-menu.is-hidden,
     .help-menu.is-hidden,
+    .name-menu.is-hidden,
+    .matchmaking-menu.is-hidden,
     .map-select.is-hidden {
       display: none;
     }
@@ -966,6 +970,8 @@
     .main-menu h1,
     .settings-menu h1,
     .help-menu h1,
+    .name-menu h1,
+    .matchmaking-menu h1,
     .map-select h1 {
       margin: 0;
       font-size: clamp(24px, 5vw, 64px);
@@ -979,13 +985,18 @@
     }
 
     .settings-menu h1,
-    .help-menu h1 {
+    .help-menu h1,
+    .name-menu h1,
+    .matchmaking-menu h1 {
       text-transform: none;
     }
 
     .menu-actions,
     .settings-panel,
-    .help-panel {
+    .help-panel,
+    .name-panel,
+    .matchmaking-panel,
+    .help-tabs {
       display: grid;
       gap: 12px;
       justify-items: center;
@@ -1018,6 +1029,22 @@
       box-shadow: 0 3px 0 rgba(0, 0, 0, .48);
     }
 
+    .help-tabs {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      width: min(100%, 580px);
+      justify-self: center;
+    }
+
+    .help-tabs .menu-button {
+      min-width: 0;
+      width: 100%;
+    }
+
+    .help-tabs .menu-button.is-active {
+      background: #9a6639;
+      color: #fff8d7;
+    }
+
     .volume-control {
       display: grid;
       gap: 10px;
@@ -1045,6 +1072,10 @@
       text-transform: uppercase;
     }
 
+    .help-panel.is-hidden {
+      display: none;
+    }
+
     .help-panel p {
       justify-self: stretch;
       margin: 0;
@@ -1055,6 +1086,59 @@
 
     .help-panel strong {
       color: #fff2c0;
+    }
+
+    .name-panel,
+    .matchmaking-panel {
+      width: min(100%, 520px);
+      justify-self: center;
+      padding: 16px;
+      background: #33251f;
+      border: 4px solid #1c1717;
+      box-shadow: 0 6px 0 rgba(0, 0, 0, .48);
+      text-transform: uppercase;
+    }
+
+    .name-panel label,
+    .matchmaking-panel p {
+      justify-self: stretch;
+      margin: 0;
+      color: #f7d880;
+      font-size: clamp(13px, 1.7vw, 20px);
+      line-height: 1.45;
+    }
+
+    .name-panel input {
+      width: 100%;
+      margin-top: 10px;
+      padding: 10px 12px;
+      color: #fff2c0;
+      background: #1c1717;
+      border: 4px solid #0f0e0e;
+      font: inherit;
+      font-size: clamp(14px, 2vw, 24px);
+      outline: none;
+      text-transform: none;
+    }
+
+    .name-panel input:focus {
+      border-color: #f7d880;
+    }
+
+    .match-found-box {
+      justify-self: center;
+      padding: 12px 18px;
+      background: #9a6639;
+      border: 4px solid #1c1717;
+      box-shadow: 0 6px 0 rgba(0, 0, 0, .48);
+      color: #fff8d7;
+      font-size: clamp(18px, 3vw, 42px);
+      line-height: 1;
+      text-transform: uppercase;
+    }
+
+    .match-found-box.is-hidden {
+      display: none;
     }
 
     .map-result {
@@ -1293,6 +1377,7 @@
       <h1>Blades of Steel</h1>
       <div class="menu-actions">
         <button class="menu-button singleplayer-button" type="button">Singleplayer Mode</button>
+        <button class="menu-button multiplayer-button" type="button">Multiplayer Mode</button>
         <button class="menu-button settings-button" type="button">Settings</button>
         <button class="menu-button help-button" type="button">Help</button>
       </div>
@@ -1311,11 +1396,45 @@
 
     <section class="help-menu is-hidden" aria-label="help">
       <h1>Help</h1>
-      <div class="help-panel">
+      <div class="help-tabs" role="tablist" aria-label="control tutorials">
+        <button class="menu-button help-tab-button is-active" type="button" data-help-page="single">Singleplayer</button>
+        <button class="menu-button help-tab-button" type="button" data-help-page="multi">Multiplayer</button>
+      </div>
+      <div class="help-panel" data-help-panel="single">
         <p><strong>Player 1:</strong> A and D move, W jumps, W again double jumps, E attacks, and R dashes.</p>
         <p><strong>Player 2:</strong> Left and Right arrows move, Up jumps, Up again double jumps, Enter attacks, and / dashes.</p>
         <p>Each sword hit deals 20 damage. Dashing briefly makes you invulnerable.</p>
-        <button class="menu-button help-back-button" type="button">Back</button>
+      </div>
+      <div class="help-panel is-hidden" data-help-panel="multi">
+        <p><strong>Multiplayer:</strong> Each player uses these controls on their own computer.</p>
+        <p>A and D move, Space jumps, Space again double jumps, E attacks, and R dashes forward.</p>
+        <p>Each sword hit deals 20 damage. Dashing briefly makes you invulnerable.</p>
+      </div>
+      <button class="menu-button help-back-button" type="button">Back</button>
+    </section>
+
+    <section class="name-menu is-hidden" aria-label="multiplayer name">
+      <h1>Multiplayer</h1>
+      <form class="name-panel multiplayer-name-form">
+        <label>
+          Enter your name
+          <input class="multiplayer-name-input" type="text" maxlength="14" autocomplete="off" placeholder="Fencer" />
+        </label>
+        <div class="menu-actions">
+          <button class="menu-button multiplayer-search-button" type="submit">Find Match</button>
+          <button class="menu-button multiplayer-name-back-button" type="button">Back</button>
+        </div>
+      </form>
+    </section>
+
+    <section class="matchmaking-menu is-hidden" aria-label="matchmaking">
+      <h1 class="matchmaking-title">Looking for opponent...</h1>
+      <div class="match-found-box is-hidden">Match Found!</div>
+      <div class="matchmaking-panel">
+        <p class="matchmaking-status">Connecting to the multiplayer network...</p>
+        <p><strong>Controls:</strong> A and D move, Space jumps, E attacks, and R dashes forward.</p>
+        <p>Win by taking all three lives from your opponent.</p>
+        <button class="menu-button cancel-matchmaking-button" type="button">Cancel</button>
       </div>
     </section>
 
@@ -1356,12 +1475,24 @@
     const replayButton = document.querySelector(".replay-button");
     const mainMenu = document.querySelector(".main-menu");
     const singleplayerButton = document.querySelector(".singleplayer-button");
+    const multiplayerButton = document.querySelector(".multiplayer-button");
     const settingsButton = document.querySelector(".settings-button");
     const helpButton = document.querySelector(".help-button");
     const settingsMenu = document.querySelector(".settings-menu");
     const backMenuButton = document.querySelector(".back-menu-button");
     const helpMenu = document.querySelector(".help-menu");
     const helpBackButton = document.querySelector(".help-back-button");
+    const helpTabButtons = [...document.querySelectorAll(".help-tab-button")];
+    const helpPanels = [...document.querySelectorAll("[data-help-panel]")];
+    const nameMenu = document.querySelector(".name-menu");
+    const multiplayerNameForm = document.querySelector(".multiplayer-name-form");
+    const multiplayerNameInput = document.querySelector(".multiplayer-name-input");
+    const multiplayerNameBackButton = document.querySelector(".multiplayer-name-back-button");
+    const matchmakingMenu = document.querySelector(".matchmaking-menu");
+    const matchmakingTitle = document.querySelector(".matchmaking-title");
+    const matchmakingStatus = document.querySelector(".matchmaking-status");
+    const matchFoundBox = document.querySelector(".match-found-box");
+    const cancelMatchmakingButton = document.querySelector(".cancel-matchmaking-button");
     const volumeSlider = document.querySelector(".volume-slider");
     const volumeValue = document.querySelector(".volume-value");
     const mapSelect = document.querySelector(".map-select");
@@ -1436,6 +1567,18 @@
         dashReadyAt: 0
       }
     ];
+    const SINGLEPLAYER_PLAYER_SETUP = [
+      { name: "P1", label: "Player 1", leftKey: "KeyA", rightKey: "KeyD", jumpKey: "KeyW", attackKey: "KeyE", dashKey: "KeyR" },
+      { name: "P2", label: "Player 2", leftKey: "ArrowLeft", rightKey: "ArrowRight", jumpKey: "ArrowUp", attackKey: "Enter", dashKey: "Slash" }
+    ];
+    const MULTIPLAYER_KEYS = {
+      left: "KeyA",
+      right: "KeyD",
+      jump: "Space",
+      attack: "KeyE",
+      dash: "KeyR"
+    };
+    const MULTIPLAYER_CONTROL_KEYS = new Set(Object.values(MULTIPLAYER_KEYS));
     const ATTACK_DAMAGE = 20;
     const ATTACK_DURATION = 260;
     const ATTACK_COOLDOWN = 520;
@@ -1448,6 +1591,11 @@
     const WINNER_TO_MAP_DELAY = 3000;
     const DASH_DURATION = 220;
     const DASH_COOLDOWN = 850;
+    const MATCH_FOUND_DELAY = 2000;
+    const MULTIPLAYER_STATE_INTERVAL = 50;
+    const MULTIPLAYER_APP_CONFIG = { appId: "blades-of-steel-szhang2187-v1" };
+    const MULTIPLAYER_LOBBY_ROOM = "public-matchmaking-v1";
+    const MULTIPLAYER_MAP_ID = "weizen";
     const SWING_SOUND_SRC = "assets/sword-swing.mp3";
     let swingVolume = .65;
     const swingSounds = Array.from({ length: 4 }, () => {
@@ -1458,10 +1606,11 @@
     });
     let nextSwingSound = 0;
     const heldKeys = new Set();
-    const movementKeys = new Set(players.flatMap((player) => [player.leftKey, player.rightKey]));
-    const jumpKeys = new Map(players.map((player, index) => [player.jumpKey, index]));
-    const attackKeys = new Map(players.map((player, index) => [player.attackKey, index]));
-    const dashKeys = new Map(players.map((player, index) => [player.dashKey, index]));
+    const multiplayerInputs = players.map(() => ({ left: false, right: false }));
+    let movementKeys = new Set();
+    let jumpKeys = new Map();
+    let attackKeys = new Map();
+    let dashKeys = new Map();
     const platformEls = [...document.querySelectorAll(".platform")];
     const maps = {
       weizen: {
@@ -1527,16 +1676,73 @@
       }
     };
     let currentMap = maps.weizen;
+    let gameMode = "singleplayer";
     let menuOpen = true;
     let settingsOpen = false;
     let helpOpen = false;
+    let nameOpen = false;
+    let matchmakingOpen = false;
     let mapSelectOpen = false;
     let gameOver = false;
     let roundResetTimer = null;
     let winnerTransitionTimer = null;
+    let trysteroModulePromise = null;
+    const multiplayer = {
+      status: "idle",
+      room: null,
+      selfId: "",
+      remotePeerId: "",
+      localName: "",
+      remoteName: "",
+      matchId: "",
+      mapId: MULTIPLAYER_MAP_ID,
+      isHost: false,
+      localPlayerIndex: 0,
+      remotePlayerIndex: 1,
+      actions: null,
+      announceTimer: null,
+      matchStartTimer: null,
+      returnTimer: null,
+      lastStateSentAt: 0
+    };
+
+    function refreshSingleplayerControlMaps() {
+      movementKeys = new Set(players.flatMap((player) => [player.leftKey, player.rightKey]));
+      jumpKeys = new Map(players.map((player, index) => [player.jumpKey, index]));
+      attackKeys = new Map(players.map((player, index) => [player.attackKey, index]));
+      dashKeys = new Map(players.map((player, index) => [player.dashKey, index]));
+    }
+
+    function configureSingleplayerPlayers() {
+      SINGLEPLAYER_PLAYER_SETUP.forEach((setup, index) => {
+        Object.assign(players[index], setup);
+      });
+      refreshSingleplayerControlMaps();
+    }
+
+    configureSingleplayerPlayers();
 
     function clamp(value, min, max) {
       return Math.min(Math.max(value, min), max);
+    }
+
+    function gameControlKeyPressed(code) {
+      return movementKeys.has(code) || jumpKeys.has(code) || attackKeys.has(code) || dashKeys.has(code) || MULTIPLAYER_CONTROL_KEYS.has(code);
+    }
+
+    function uiBlocksGameInput() {
+      return menuOpen || settingsOpen || helpOpen || nameOpen || matchmakingOpen || mapSelectOpen || gameOver || roundResetTimer;
+    }
+
+    function clearMultiplayerInputs() {
+      multiplayerInputs.forEach((input) => {
+        input.left = false;
+        input.right = false;
+      });
+    }
+
+    function multiplayerMatchActive() {
+      return gameMode === "multiplayer" && multiplayer.status === "playing";
     }
 
     function stageBounds() {
@@ -1641,12 +1847,20 @@
     }
 
     function showMainMenu(randomizeBackground = false) {
+      if (gameMode === "multiplayer" || multiplayer.status !== "idle") {
+        stopMultiplayerSession();
+      }
+      configureSingleplayerPlayers();
+      gameMode = "singleplayer";
       menuOpen = true;
       settingsOpen = false;
       helpOpen = false;
+      nameOpen = false;
+      matchmakingOpen = false;
       mapSelectOpen = false;
       gameOver = false;
       heldKeys.clear();
+      clearMultiplayerInputs();
 
       if (randomizeBackground) {
         randomizeMenuBackground();
@@ -1656,6 +1870,8 @@
       mainMenu.classList.remove("is-hidden");
       settingsMenu.classList.add("is-hidden");
       helpMenu.classList.add("is-hidden");
+      nameMenu.classList.add("is-hidden");
+      matchmakingMenu.classList.add("is-hidden");
       mapSelect.classList.add("is-hidden");
       winnerBanner.classList.add("is-hidden");
       winnerBanner.classList.remove("no-replay");
@@ -1665,16 +1881,23 @@
     }
 
     function showMapSelect() {
+      configureSingleplayerPlayers();
+      gameMode = "singleplayer";
       menuOpen = false;
       settingsOpen = false;
       helpOpen = false;
+      nameOpen = false;
+      matchmakingOpen = false;
       mapSelectOpen = true;
       gameOver = false;
       heldKeys.clear();
+      clearMultiplayerInputs();
       setUiMode(true);
       mainMenu.classList.add("is-hidden");
       settingsMenu.classList.add("is-hidden");
       helpMenu.classList.add("is-hidden");
+      nameMenu.classList.add("is-hidden");
+      matchmakingMenu.classList.add("is-hidden");
       winnerBanner.classList.add("is-hidden");
       winnerBanner.classList.remove("no-replay");
       winnerMessage.textContent = "";
@@ -1686,12 +1909,16 @@
       menuOpen = false;
       settingsOpen = true;
       helpOpen = false;
+      nameOpen = false;
+      matchmakingOpen = false;
       mapSelectOpen = false;
       heldKeys.clear();
       setUiMode(true);
       mainMenu.classList.add("is-hidden");
       mapSelect.classList.add("is-hidden");
       helpMenu.classList.add("is-hidden");
+      nameMenu.classList.add("is-hidden");
+      matchmakingMenu.classList.add("is-hidden");
       settingsMenu.classList.remove("is-hidden");
       volumeSlider.focus();
     }
@@ -1700,14 +1927,73 @@
       menuOpen = false;
       settingsOpen = false;
       helpOpen = true;
+      nameOpen = false;
+      matchmakingOpen = false;
       mapSelectOpen = false;
       heldKeys.clear();
       setUiMode(true);
       mainMenu.classList.add("is-hidden");
       settingsMenu.classList.add("is-hidden");
       mapSelect.classList.add("is-hidden");
+      nameMenu.classList.add("is-hidden");
+      matchmakingMenu.classList.add("is-hidden");
       helpMenu.classList.remove("is-hidden");
       helpBackButton.focus();
+    }
+
+    function showHelpPage(pageName) {
+      helpTabButtons.forEach((button) => {
+        button.classList.toggle("is-active", button.dataset.helpPage === pageName);
+      });
+      helpPanels.forEach((panel) => {
+        panel.classList.toggle("is-hidden", panel.dataset.helpPanel !== pageName);
+      });
+    }
+
+    function showMultiplayerNamePrompt() {
+      menuOpen = false;
+      settingsOpen = false;
+      helpOpen = false;
+      nameOpen = true;
+      matchmakingOpen = false;
+      mapSelectOpen = false;
+      gameOver = false;
+      heldKeys.clear();
+      clearMultiplayerInputs();
+      setUiMode(true);
+      mainMenu.classList.add("is-hidden");
+      settingsMenu.classList.add("is-hidden");
+      helpMenu.classList.add("is-hidden");
+      mapSelect.classList.add("is-hidden");
+      matchmakingMenu.classList.add("is-hidden");
+      winnerBanner.classList.add("is-hidden");
+      nameMenu.classList.remove("is-hidden");
+      multiplayerNameInput.focus();
+      multiplayerNameInput.select();
+    }
+
+    function showMatchmakingScreen(title = "Looking for opponent...", status = "Searching for another player...") {
+      menuOpen = false;
+      settingsOpen = false;
+      helpOpen = false;
+      nameOpen = false;
+      matchmakingOpen = true;
+      mapSelectOpen = false;
+      gameOver = false;
+      heldKeys.clear();
+      clearMultiplayerInputs();
+      setUiMode(true);
+      mainMenu.classList.add("is-hidden");
+      settingsMenu.classList.add("is-hidden");
+      helpMenu.classList.add("is-hidden");
+      nameMenu.classList.add("is-hidden");
+      mapSelect.classList.add("is-hidden");
+      winnerBanner.classList.add("is-hidden");
+      matchmakingTitle.textContent = title;
+      matchmakingStatus.textContent = status;
+      matchFoundBox.classList.toggle("is-hidden", title !== "Match Found!");
+      matchmakingMenu.classList.remove("is-hidden");
+      cancelMatchmakingButton.focus();
     }
 
     function setSwingVolume(value) {
@@ -1719,15 +2005,21 @@
     }
 
     function selectMap(mapId) {
+      configureSingleplayerPlayers();
+      gameMode = "singleplayer";
       setMap(mapId);
       menuOpen = false;
       settingsOpen = false;
       helpOpen = false;
+      nameOpen = false;
+      matchmakingOpen = false;
       mapSelectOpen = false;
       setUiMode(false);
       mainMenu.classList.add("is-hidden");
       settingsMenu.classList.add("is-hidden");
       helpMenu.classList.add("is-hidden");
+      nameMenu.classList.add("is-hidden");
+      matchmakingMenu.classList.add("is-hidden");
       mapSelect.classList.add("is-hidden");
       resetMatch();
     }
@@ -1740,7 +2032,13 @@
       return clamp(gameFrame.clientWidth * 1.85, 950, 1600);
     }
 
-    function movementDirection(player) {
+    function movementDirectionForPlayer(playerIndex) {
+      if (multiplayerMatchActive()) {
+        const input = multiplayerInputs[playerIndex];
+        return Number(input?.right) - Number(input?.left);
+      }
+
+      const player = players[playerIndex];
       return Number(heldKeys.has(player.rightKey)) - Number(heldKeys.has(player.leftKey));
     }
 
@@ -1781,7 +2079,7 @@
         return;
       }
 
-      const direction = movementDirection(player);
+      const direction = movementDirectionForPlayer(playerIndex);
 
       if (direction !== 0) {
         player.facing = direction;
@@ -1828,20 +2126,30 @@
       menuOpen = false;
       settingsOpen = false;
       helpOpen = false;
+      nameOpen = false;
+      matchmakingOpen = false;
       mapSelectOpen = false;
       setUiMode(false);
       mainMenu.classList.add("is-hidden");
       settingsMenu.classList.add("is-hidden");
       helpMenu.classList.add("is-hidden");
+      nameMenu.classList.add("is-hidden");
+      matchmakingMenu.classList.add("is-hidden");
       mapSelect.classList.add("is-hidden");
 
       winnerTransitionTimer = window.setTimeout(() => {
         winnerTransitionTimer = null;
         winnerBanner.classList.add("is-hidden");
         winnerMessage.textContent = "";
-        showMapSelect();
-        mapResult.textContent = `${winner.label} wins!`;
+        if (gameMode === "multiplayer") {
+          showMainMenu(false);
+        } else {
+          showMapSelect();
+          mapResult.textContent = `${winner.label} wins!`;
+        }
       }, WINNER_TO_MAP_DELAY);
+
+      sendMultiplayerState(true);
     }
 
     function scheduleRoundRestart() {
@@ -1872,6 +2180,7 @@
 
       roundLabel.textContent = `${loser.name} Down`;
       scheduleRoundRestart();
+      sendMultiplayerState(true);
     }
 
     function killPlayer(playerIndex) {
@@ -1969,7 +2278,9 @@
 
     function resetRound() {
       heldKeys.clear();
-      roundLabel.textContent = currentMap.roundTitle;
+      roundLabel.textContent = multiplayerMatchActive()
+        ? `${players[0].name} vs ${players[1].name}`
+        : currentMap.roundTitle;
 
       players.forEach((player) => {
         setPlayerHp(player, player.maxHp);
@@ -1990,6 +2301,7 @@
         player.el.classList.remove("is-attacking", "is-dashing", "is-dead", "is-hit", "is-walking");
       });
       placePlayers();
+      sendMultiplayerState(true);
     }
 
     function resetMatch() {
@@ -2018,6 +2330,475 @@
       resetRound();
     }
 
+    function sanitizePlayerName(name) {
+      const cleanName = String(name || "").trim().replace(/\s+/g, " ").slice(0, 14);
+      return cleanName || `Fencer ${Math.floor(1000 + Math.random() * 9000)}`;
+    }
+
+    function safeSend(sendAction, payload, peerId) {
+      if (!sendAction) {
+        return;
+      }
+
+      try {
+        if (peerId) {
+          sendAction(payload, peerId);
+        } else {
+          sendAction(payload);
+        }
+      } catch (error) {
+        console.warn("Multiplayer send failed", error);
+      }
+    }
+
+    function loadTrystero() {
+      if (!trysteroModulePromise) {
+        trysteroModulePromise = import("https://esm.run/@trystero-p2p/torrent");
+      }
+
+      return trysteroModulePromise;
+    }
+
+    function stopMultiplayerSession() {
+      if (multiplayer.announceTimer) {
+        window.clearInterval(multiplayer.announceTimer);
+      }
+
+      if (multiplayer.matchStartTimer) {
+        window.clearTimeout(multiplayer.matchStartTimer);
+      }
+
+      if (multiplayer.returnTimer) {
+        window.clearTimeout(multiplayer.returnTimer);
+      }
+
+      multiplayer.status = "idle";
+
+      if (multiplayer.room) {
+        try {
+          multiplayer.room.leave();
+        } catch (error) {
+          console.warn("Could not leave multiplayer room", error);
+        }
+      }
+
+      Object.assign(multiplayer, {
+        status: "idle",
+        room: null,
+        selfId: "",
+        remotePeerId: "",
+        localName: "",
+        remoteName: "",
+        matchId: "",
+        mapId: MULTIPLAYER_MAP_ID,
+        isHost: false,
+        localPlayerIndex: 0,
+        remotePlayerIndex: 1,
+        actions: null,
+        announceTimer: null,
+        matchStartTimer: null,
+        returnTimer: null,
+        lastStateSentAt: 0
+      });
+      clearMultiplayerInputs();
+    }
+
+    function announceLooking(peerId) {
+      if (multiplayer.status !== "queue") {
+        return;
+      }
+
+      safeSend(multiplayer.actions?.sendLooking, {
+        seeking: true,
+        name: multiplayer.localName,
+        at: Date.now()
+      }, peerId);
+    }
+
+    function setupMultiplayerRoom(module) {
+      const room = module.joinRoom(MULTIPLAYER_APP_CONFIG, MULTIPLAYER_LOBBY_ROOM);
+      const [sendLooking, getLooking] = room.makeAction("bos-looking");
+      const [sendMatch, getMatch] = room.makeAction("bos-match");
+      const [sendAccept, getAccept] = room.makeAction("bos-accept");
+      const [sendInput, getInput] = room.makeAction("bos-input");
+      const [sendState, getState] = room.makeAction("bos-state");
+
+      multiplayer.room = room;
+      multiplayer.selfId = module.selfId || `${Date.now()}-${Math.random()}`;
+      multiplayer.actions = { sendLooking, sendMatch, sendAccept, sendInput, sendState };
+
+      room.onPeerJoin((peerId) => {
+        announceLooking(peerId);
+      });
+
+      room.onPeerLeave((peerId) => {
+        if (peerId === multiplayer.remotePeerId && multiplayer.status !== "idle") {
+          showMatchmakingScreen("Opponent Left", "The other player disconnected. Returning to the main menu...");
+          multiplayer.returnTimer = window.setTimeout(() => showMainMenu(false), MATCH_FOUND_DELAY);
+        }
+      });
+
+      getLooking((data, peerId) => handleMultiplayerLooking(data, peerId));
+      getMatch((data, peerId) => handleMultiplayerMatchOffer(data, peerId));
+      getAccept((data, peerId) => handleMultiplayerAccept(data, peerId));
+      getInput((data, peerId) => handleMultiplayerInput(data, peerId));
+      getState((data, peerId) => applyMultiplayerState(data, peerId));
+    }
+
+    async function beginMultiplayerMatchmaking(rawName) {
+      stopMultiplayerSession();
+      gameMode = "multiplayer";
+      multiplayer.status = "connecting";
+      multiplayer.localName = sanitizePlayerName(rawName);
+      showMatchmakingScreen("Looking for opponent...", `Entering the queue as ${multiplayer.localName}...`);
+
+      try {
+        const module = await loadTrystero();
+
+        if (multiplayer.status !== "connecting") {
+          return;
+        }
+
+        setupMultiplayerRoom(module);
+        multiplayer.status = "queue";
+        showMatchmakingScreen("Looking for opponent...", `Searching as ${multiplayer.localName}...`);
+        announceLooking();
+        multiplayer.announceTimer = window.setInterval(() => announceLooking(), 1500);
+      } catch (error) {
+        console.error(error);
+        multiplayer.status = "error";
+        showMatchmakingScreen("Connection Failed", "Could not reach the multiplayer network. Check your internet connection and try again.");
+      }
+    }
+
+    function handleMultiplayerLooking(data, peerId) {
+      if (multiplayer.status !== "queue" || !data?.seeking || peerId === multiplayer.selfId) {
+        return;
+      }
+
+      if (String(multiplayer.selfId) > String(peerId)) {
+        return;
+      }
+
+      createMultiplayerMatch(peerId, sanitizePlayerName(data.name || "Opponent"));
+    }
+
+    function createMultiplayerMatch(peerId, remoteName) {
+      if (multiplayer.status !== "queue") {
+        return;
+      }
+
+      const matchId = `${Date.now()}-${String(multiplayer.selfId).slice(0, 6)}-${String(peerId).slice(0, 6)}`;
+      Object.assign(multiplayer, {
+        status: "matched",
+        remotePeerId: peerId,
+        remoteName,
+        matchId,
+        mapId: MULTIPLAYER_MAP_ID,
+        isHost: true,
+        localPlayerIndex: 0,
+        remotePlayerIndex: 1
+      });
+
+      if (multiplayer.announceTimer) {
+        window.clearInterval(multiplayer.announceTimer);
+        multiplayer.announceTimer = null;
+      }
+
+      safeSend(multiplayer.actions?.sendMatch, {
+        target: peerId,
+        matchId,
+        mapId: multiplayer.mapId,
+        hostName: multiplayer.localName,
+        guestName: remoteName
+      }, peerId);
+      showMatchFoundAndStart();
+    }
+
+    function handleMultiplayerMatchOffer(data, peerId) {
+      if (multiplayer.status !== "queue" || data?.target !== multiplayer.selfId) {
+        return;
+      }
+
+      Object.assign(multiplayer, {
+        status: "matched",
+        remotePeerId: peerId,
+        remoteName: sanitizePlayerName(data.hostName || "Opponent"),
+        matchId: data.matchId,
+        mapId: data.mapId || MULTIPLAYER_MAP_ID,
+        isHost: false,
+        localPlayerIndex: 1,
+        remotePlayerIndex: 0
+      });
+
+      if (multiplayer.announceTimer) {
+        window.clearInterval(multiplayer.announceTimer);
+        multiplayer.announceTimer = null;
+      }
+
+      safeSend(multiplayer.actions?.sendAccept, {
+        matchId: multiplayer.matchId,
+        name: multiplayer.localName
+      }, peerId);
+      showMatchFoundAndStart();
+    }
+
+    function handleMultiplayerAccept(data, peerId) {
+      if (!multiplayer.isHost || peerId !== multiplayer.remotePeerId || data?.matchId !== multiplayer.matchId) {
+        return;
+      }
+
+      multiplayer.remoteName = sanitizePlayerName(data.name || multiplayer.remoteName);
+    }
+
+    function showMatchFoundAndStart() {
+      showMatchmakingScreen("Match Found!", `${multiplayer.localName} vs ${multiplayer.remoteName}`);
+      matchFoundBox.classList.remove("is-hidden");
+
+      if (multiplayer.matchStartTimer) {
+        window.clearTimeout(multiplayer.matchStartTimer);
+      }
+
+      multiplayer.matchStartTimer = window.setTimeout(() => {
+        multiplayer.matchStartTimer = null;
+        startMultiplayerMatch();
+      }, MATCH_FOUND_DELAY);
+    }
+
+    function applyMultiplayerNames() {
+      if (multiplayer.isHost) {
+        players[0].name = multiplayer.localName;
+        players[0].label = multiplayer.localName;
+        players[1].name = multiplayer.remoteName;
+        players[1].label = multiplayer.remoteName;
+      } else {
+        players[0].name = multiplayer.remoteName;
+        players[0].label = multiplayer.remoteName;
+        players[1].name = multiplayer.localName;
+        players[1].label = multiplayer.localName;
+      }
+    }
+
+    function startMultiplayerMatch() {
+      if (multiplayer.status !== "matched") {
+        return;
+      }
+
+      gameMode = "multiplayer";
+      multiplayer.status = "playing";
+      applyMultiplayerNames();
+      clearMultiplayerInputs();
+      setMap(multiplayer.mapId);
+      menuOpen = false;
+      settingsOpen = false;
+      helpOpen = false;
+      nameOpen = false;
+      matchmakingOpen = false;
+      mapSelectOpen = false;
+      setUiMode(false);
+      mainMenu.classList.add("is-hidden");
+      settingsMenu.classList.add("is-hidden");
+      helpMenu.classList.add("is-hidden");
+      nameMenu.classList.add("is-hidden");
+      matchmakingMenu.classList.add("is-hidden");
+      mapSelect.classList.add("is-hidden");
+      previousTime = performance.now();
+      resetMatch();
+    }
+
+    function applyMultiplayerMove(playerIndex, direction, pressed) {
+      const input = multiplayerInputs[playerIndex];
+
+      if (!input || (direction !== "left" && direction !== "right")) {
+        return;
+      }
+
+      input[direction] = pressed;
+    }
+
+    function handleMultiplayerInput(data, peerId) {
+      if (!multiplayer.isHost || multiplayer.status !== "playing" || peerId !== multiplayer.remotePeerId) {
+        return;
+      }
+
+      const playerIndex = multiplayer.remotePlayerIndex;
+
+      if (data?.kind === "move") {
+        applyMultiplayerMove(playerIndex, data.direction, Boolean(data.pressed));
+        return;
+      }
+
+      if (data?.kind !== "action") {
+        return;
+      }
+
+      if (data.action === "jump") {
+        startJump(playerIndex);
+      } else if (data.action === "attack") {
+        startAttack(playerIndex);
+      } else if (data.action === "dash") {
+        startDash(playerIndex);
+      }
+    }
+
+    function sendLocalMultiplayerInput(payload) {
+      if (multiplayer.isHost) {
+        return;
+      }
+
+      safeSend(multiplayer.actions?.sendInput, payload, multiplayer.remotePeerId);
+    }
+
+    function handleMultiplayerKeyDown(event) {
+      if (!multiplayerMatchActive() || !MULTIPLAYER_CONTROL_KEYS.has(event.code)) {
+        return false;
+      }
+
+      event.preventDefault();
+      const playerIndex = multiplayer.localPlayerIndex;
+
+      if (event.code === MULTIPLAYER_KEYS.left || event.code === MULTIPLAYER_KEYS.right) {
+        const direction = event.code === MULTIPLAYER_KEYS.left ? "left" : "right";
+
+        if (!multiplayerInputs[playerIndex][direction]) {
+          applyMultiplayerMove(playerIndex, direction, true);
+          sendLocalMultiplayerInput({ kind: "move", direction, pressed: true });
+        }
+
+        return true;
+      }
+
+      if (event.repeat) {
+        return true;
+      }
+
+      if (event.code === MULTIPLAYER_KEYS.jump) {
+        if (multiplayer.isHost) {
+          startJump(playerIndex);
+        } else {
+          sendLocalMultiplayerInput({ kind: "action", action: "jump" });
+        }
+      } else if (event.code === MULTIPLAYER_KEYS.attack) {
+        if (multiplayer.isHost) {
+          startAttack(playerIndex);
+        } else {
+          sendLocalMultiplayerInput({ kind: "action", action: "attack" });
+        }
+      } else if (event.code === MULTIPLAYER_KEYS.dash) {
+        if (multiplayer.isHost) {
+          startDash(playerIndex);
+        } else {
+          sendLocalMultiplayerInput({ kind: "action", action: "dash" });
+        }
+      }
+
+      return true;
+    }
+
+    function handleMultiplayerKeyUp(event) {
+      if (!multiplayerMatchActive() || (event.code !== MULTIPLAYER_KEYS.left && event.code !== MULTIPLAYER_KEYS.right)) {
+        return false;
+      }
+
+      event.preventDefault();
+      const direction = event.code === MULTIPLAYER_KEYS.left ? "left" : "right";
+      applyMultiplayerMove(multiplayer.localPlayerIndex, direction, false);
+      sendLocalMultiplayerInput({ kind: "move", direction, pressed: false });
+      return true;
+    }
+
+    function serializeMultiplayerPlayer(player) {
+      return {
+        hp: player.hp,
+        lives: player.lives,
+        x: player.x,
+        y: player.y,
+        vy: player.vy,
+        grounded: player.grounded,
+        standingOn: player.standingOn,
+        airJumpsUsed: player.airJumpsUsed,
+        facing: player.facing,
+        isDead: player.isDead,
+        isAttacking: player.isAttacking,
+        isDashing: player.isDashing,
+        isWalking: player.el.classList.contains("is-walking")
+      };
+    }
+
+    function sendMultiplayerState(force = false) {
+      if (!multiplayerMatchActive() || !multiplayer.isHost || !multiplayer.remotePeerId) {
+        return;
+      }
+
+      const now = performance.now();
+
+      if (!force && now - multiplayer.lastStateSentAt < MULTIPLAYER_STATE_INTERVAL) {
+        return;
+      }
+
+      multiplayer.lastStateSentAt = now;
+      safeSend(multiplayer.actions?.sendState, {
+        matchId: multiplayer.matchId,
+        mapId: currentMap.id,
+        roundLabel: roundLabel.textContent,
+        gameOver,
+        winnerVisible: !winnerBanner.classList.contains("is-hidden"),
+        winnerMessage: winnerMessage.textContent,
+        players: players.map((player) => serializeMultiplayerPlayer(player))
+      }, multiplayer.remotePeerId);
+    }
+
+    function applyMultiplayerState(data, peerId) {
+      if (multiplayer.isHost || multiplayer.status !== "playing" || peerId !== multiplayer.remotePeerId || data?.matchId !== multiplayer.matchId) {
+        return;
+      }
+
+      if (data.mapId && currentMap.id !== data.mapId) {
+        setMap(data.mapId);
+      }
+
+      roundLabel.textContent = data.roundLabel || currentMap.roundTitle;
+      gameOver = Boolean(data.gameOver);
+
+      data.players?.forEach((snapshot, index) => {
+        const player = players[index];
+
+        if (!player || !snapshot) {
+          return;
+        }
+
+        player.lives = snapshot.lives;
+        player.x = snapshot.x;
+        player.y = snapshot.y;
+        player.vy = snapshot.vy;
+        player.grounded = snapshot.grounded;
+        player.standingOn = snapshot.standingOn;
+        player.airJumpsUsed = snapshot.airJumpsUsed;
+        player.facing = snapshot.facing;
+        player.isDead = snapshot.isDead;
+        player.isAttacking = snapshot.isAttacking;
+        player.isDashing = snapshot.isDashing;
+        setPlayerHp(player, snapshot.hp);
+        drawLives(player);
+        player.el.classList.toggle("is-dead", snapshot.isDead);
+        player.el.classList.toggle("is-attacking", snapshot.isAttacking);
+        player.el.classList.toggle("is-dashing", snapshot.isDashing);
+        player.el.classList.toggle("is-walking", snapshot.isWalking);
+        drawPlayer(player);
+      });
+
+      winnerBanner.classList.toggle("is-hidden", !data.winnerVisible);
+      winnerBanner.classList.add("no-replay");
+      winnerMessage.textContent = data.winnerMessage || "";
+
+      if (gameOver && !multiplayer.returnTimer) {
+        multiplayer.returnTimer = window.setTimeout(() => {
+          multiplayer.returnTimer = null;
+          showMainMenu(false);
+        }, WINNER_TO_MAP_DELAY);
+      }
+    }
+
     function placePlayers() {
       const bounds = stageBounds();
       const platforms = mapPlatformRects();
@@ -2043,7 +2824,11 @@
     window.addEventListener("keydown", (event) => {
       const targetElement = event.target instanceof Element ? event.target : null;
 
-      if ((menuOpen || settingsOpen || helpOpen) && targetElement?.closest("button") && (event.code === "Enter" || event.code === "Space")) {
+      if (targetElement?.matches("input, textarea")) {
+        return;
+      }
+
+      if ((menuOpen || settingsOpen || helpOpen || nameOpen || matchmakingOpen) && targetElement?.closest("button") && (event.code === "Enter" || event.code === "Space")) {
         return;
       }
 
@@ -2059,11 +2844,15 @@
         return;
       }
 
-      if (menuOpen || settingsOpen || helpOpen || mapSelectOpen || gameOver || roundResetTimer) {
-        if (movementKeys.has(event.code) || jumpKeys.has(event.code) || attackKeys.has(event.code) || dashKeys.has(event.code)) {
+      if (uiBlocksGameInput()) {
+        if (gameControlKeyPressed(event.code)) {
           event.preventDefault();
         }
 
+        return;
+      }
+
+      if (handleMultiplayerKeyDown(event)) {
         return;
       }
 
@@ -2103,7 +2892,11 @@
     });
 
     window.addEventListener("keyup", (event) => {
-      if (menuOpen || settingsOpen || helpOpen || mapSelectOpen || gameOver || roundResetTimer) {
+      if (uiBlocksGameInput()) {
+        return;
+      }
+
+      if (handleMultiplayerKeyUp(event)) {
         return;
       }
 
@@ -2127,28 +2920,57 @@
 
     replayButton.addEventListener("click", resetMatch);
     singleplayerButton.addEventListener("click", () => showMapSelect());
+    multiplayerButton.addEventListener("click", () => showMultiplayerNamePrompt());
     settingsButton.addEventListener("click", () => showSettings());
     helpButton.addEventListener("click", () => showHelp());
     backMenuButton.addEventListener("click", () => showMainMenu(false));
     helpBackButton.addEventListener("click", () => showMainMenu(false));
     mapBackButton.addEventListener("click", () => showMainMenu(false));
+    multiplayerNameBackButton.addEventListener("click", () => showMainMenu(false));
+    cancelMatchmakingButton.addEventListener("click", () => showMainMenu(false));
     volumeSlider.addEventListener("input", () => setSwingVolume(volumeSlider.value));
+
+    multiplayerNameForm.addEventListener("submit", (event) => {
+      event.preventDefault();
+      beginMultiplayerMatchmaking(multiplayerNameInput.value);
+    });
+
+    helpTabButtons.forEach((button) => {
+      button.addEventListener("click", () => showHelpPage(button.dataset.helpPage));
+    });
 
     mapButtons.forEach((button) => {
       button.addEventListener("click", () => selectMap(button.dataset.map));
     });
 
     window.addEventListener("blur", () => {
+      if (multiplayerMatchActive()) {
+        const input = multiplayerInputs[multiplayer.localPlayerIndex];
+
+        if (input?.left) {
+          applyMultiplayerMove(multiplayer.localPlayerIndex, "left", false);
+          sendLocalMultiplayerInput({ kind: "move", direction: "left", pressed: false });
+        }
+
+        if (input?.right) {
+          applyMultiplayerMove(multiplayer.localPlayerIndex, "right", false);
+          sendLocalMultiplayerInput({ kind: "move", direction: "right", pressed: false });
+        }
+      }
+
       heldKeys.clear();
-      players.forEach((player) => {
-        player.isAttacking = false;
-        player.isDashing = false;
-        player.el.classList.remove("is-attacking", "is-dashing", "is-walking");
-      });
+
+      if (!multiplayerMatchActive()) {
+        players.forEach((player) => {
+          player.isAttacking = false;
+          player.isDashing = false;
+          player.el.classList.remove("is-attacking", "is-dashing", "is-walking");
+        });
+      }
     });
 
     window.addEventListener("resize", () => {
-      if (menuOpen || settingsOpen || helpOpen || mapSelectOpen || gameOver || roundResetTimer) {
+      if (uiBlocksGameInput()) {
         renderPlatforms(mapPlatformRects());
         players.forEach((player) => drawPlayer(player));
         return;
@@ -2170,7 +2992,13 @@
       const previousPlatforms = mapPlatformRects(now - delta * 1000);
       renderPlatforms(platforms);
 
-      if (menuOpen || settingsOpen || helpOpen || mapSelectOpen || gameOver || roundResetTimer) {
+      if (uiBlocksGameInput()) {
+        players.forEach((player) => drawPlayer(player));
+        requestAnimationFrame(update);
+        return;
+      }
+
+      if (multiplayerMatchActive() && !multiplayer.isHost) {
         players.forEach((player) => drawPlayer(player));
         requestAnimationFrame(update);
         return;
@@ -2182,9 +3010,7 @@
           return;
         }
 
-        const movingLeft = heldKeys.has(player.leftKey);
-        const movingRight = heldKeys.has(player.rightKey);
-        const direction = Number(movingRight) - Number(movingLeft);
+        const direction = movementDirectionForPlayer(index);
 
         if (player.isDashing) {
           const dashElapsed = now - player.dashStartedAt;
@@ -2262,10 +3088,12 @@
         drawPlayer(player);
       });
 
+      sendMultiplayerState();
       requestAnimationFrame(update);
     }
 
     setSwingVolume(volumeSlider.value);
+    showHelpPage("single");
     showMainMenu(true);
     requestAnimationFrame(update);
 
