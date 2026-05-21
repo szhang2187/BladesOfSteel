@@ -1713,8 +1713,26 @@
     const DASH_COOLDOWN = 850;
     const MATCH_FOUND_DELAY = 2000;
     const MULTIPLAYER_STATE_INTERVAL = 50;
-    const MULTIPLAYER_APP_CONFIG = { appId: "blades-of-steel-szhang2187-v3" };
-    const MULTIPLAYER_ROOM_PREFIX = "code-lobby-v1";
+    const MULTIPLAYER_APP_CONFIG = {
+      appId: "blades-of-steel-szhang2187-v4",
+      relayUrls: [
+        "wss://relay.damus.io",
+        "wss://nos.lol",
+        "wss://relay.primal.net",
+        "wss://relay.nostr.band",
+        "wss://nostr.wine"
+      ],
+      rtcConfig: {
+        iceServers: [
+          { urls: "stun:stun.l.google.com:19302" },
+          { urls: "stun:stun1.l.google.com:19302" },
+          { urls: "turn:openrelay.metered.ca:80", username: "openrelayproject", credential: "openrelayproject" },
+          { urls: "turn:openrelay.metered.ca:443", username: "openrelayproject", credential: "openrelayproject" },
+          { urls: "turns:openrelay.metered.ca:443", username: "openrelayproject", credential: "openrelayproject" }
+        ]
+      }
+    };
+    const MULTIPLAYER_ROOM_PREFIX = "code-lobby-v2";
     const MULTIPLAYER_MAP_ID = "weizen";
     const SWING_SOUND_SRC = "assets/sword-swing.mp3";
     let swingVolume = .65;

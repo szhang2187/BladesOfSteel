@@ -59,7 +59,7 @@ Each player starts with 100 HP and three lives. Sword hits deal 20 damage. When 
 
 ## Multiplayer Notes
 
-Multiplayer uses browser peer-to-peer networking through Trystero. The site can stay hosted on GitHub Pages, while the active match data is sent directly between players' browsers.
+Multiplayer uses browser peer-to-peer networking through Trystero. The site can stay hosted on GitHub Pages, while the active match data is sent directly between players' browsers. The game also includes STUN/TURN ICE server configuration to help players connect across separate networks.
 
 To play multiplayer:
 
