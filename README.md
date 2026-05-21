@@ -11,7 +11,7 @@ https://szhang2187.github.io/BladesOfSteel/
 ## Features
 
 - Local two-player sword combat
-- Peer-to-peer multiplayer matchmaking
+- Peer-to-peer multiplayer lobbies with 4 digit join codes
 - HP bars and three-life match system
 - Sword attacks, dashing, jump, and double jump
 - Dash invulnerability
@@ -59,7 +59,14 @@ Each player starts with 100 HP and three lives. Sword hits deal 20 damage. When 
 
 ## Multiplayer Notes
 
-Multiplayer uses browser peer-to-peer networking through Trystero. The site can stay hosted on GitHub Pages, while the active match data is sent directly between players' browsers. Both players need to be online and looking for a match at the same time.
+Multiplayer uses browser peer-to-peer networking through Trystero. The site can stay hosted on GitHub Pages, while the active match data is sent directly between players' browsers.
+
+To play multiplayer:
+
+1. Both players choose Multiplayer Mode and enter a name.
+2. One player chooses Create Game and shares the 4 digit join code.
+3. The other player chooses Join Game and enters that code.
+4. When both players are in the lobby, the match starts automatically.
 
 ## Run Locally
 

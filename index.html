@@ -943,6 +943,9 @@
     .settings-menu,
     .help-menu,
     .name-menu,
+    .multiplayer-choice-menu,
+    .lobby-menu,
+    .join-menu,
     .matchmaking-menu,
     .map-select {
       position: absolute;
@@ -962,6 +965,9 @@
     .settings-menu.is-hidden,
     .help-menu.is-hidden,
     .name-menu.is-hidden,
+    .multiplayer-choice-menu.is-hidden,
+    .lobby-menu.is-hidden,
+    .join-menu.is-hidden,
     .matchmaking-menu.is-hidden,
     .map-select.is-hidden {
       display: none;
@@ -971,6 +977,9 @@
     .settings-menu h1,
     .help-menu h1,
     .name-menu h1,
+    .multiplayer-choice-menu h1,
+    .lobby-menu h1,
+    .join-menu h1,
     .matchmaking-menu h1,
     .map-select h1 {
       margin: 0;
@@ -987,6 +996,9 @@
     .settings-menu h1,
     .help-menu h1,
     .name-menu h1,
+    .multiplayer-choice-menu h1,
+    .lobby-menu h1,
+    .join-menu h1,
     .matchmaking-menu h1 {
       text-transform: none;
     }
@@ -995,6 +1007,9 @@
     .settings-panel,
     .help-panel,
     .name-panel,
+    .multiplayer-choice-panel,
+    .lobby-panel,
+    .join-panel,
     .matchmaking-panel,
     .help-tabs {
       display: grid;
@@ -1089,6 +1104,9 @@
     }
 
     .name-panel,
+    .multiplayer-choice-panel,
+    .lobby-panel,
+    .join-panel,
     .matchmaking-panel {
       width: min(100%, 520px);
       justify-self: center;
@@ -1100,6 +1118,10 @@
     }
 
     .name-panel label,
+    .multiplayer-choice-panel p,
+    .lobby-panel p,
+    .join-panel label,
+    .join-panel p,
     .matchmaking-panel p {
       justify-self: stretch;
       margin: 0;
@@ -1108,7 +1130,8 @@
       line-height: 1.45;
     }
 
-    .name-panel input {
+    .name-panel input,
+    .join-panel input {
       width: 100%;
       margin-top: 10px;
       padding: 10px 12px;
@@ -1121,8 +1144,50 @@
       text-transform: none;
     }
 
-    .name-panel input:focus {
+    .join-panel input {
+      text-align: center;
+      letter-spacing: 6px;
+      text-transform: uppercase;
+    }
+
+    .name-panel input:focus,
+    .join-panel input:focus {
       border-color: #f7d880;
+    }
+
+    .join-code-display {
+      justify-self: center;
+      padding: 12px 18px;
+      color: #fff8d7;
+      background: #1c1717;
+      border: 4px solid #0f0e0e;
+      box-shadow: inset 0 0 0 4px rgba(247, 216, 128, .12);
+      font-size: clamp(32px, 7vw, 82px);
+      line-height: 1;
+      letter-spacing: 8px;
+    }
+
+    .lobby-players {
+      display: grid;
+      gap: 8px;
+      justify-self: stretch;
+      margin: 0;
+      padding: 0;
+      list-style: none;
+    }
+
+    .lobby-players li {
+      padding: 8px 10px;
+      color: #fff2c0;
+      background: #1c1717;
+      border: 3px solid #0f0e0e;
+      font-size: clamp(13px, 1.7vw, 20px);
+      text-transform: none;
+    }
+
+    .join-status,
+    .lobby-status {
+      min-height: 1.4em;
     }
 
     .match-found-box {
@@ -1421,8 +1486,47 @@
           <input class="multiplayer-name-input" type="text" maxlength="14" autocomplete="off" placeholder="Fencer" />
         </label>
         <div class="menu-actions">
-          <button class="menu-button multiplayer-search-button" type="submit">Find Match</button>
+          <button class="menu-button multiplayer-search-button" type="submit">Continue</button>
           <button class="menu-button multiplayer-name-back-button" type="button">Back</button>
+        </div>
+      </form>
+    </section>
+
+    <section class="multiplayer-choice-menu is-hidden" aria-label="multiplayer options">
+      <h1>Multiplayer</h1>
+      <div class="multiplayer-choice-panel">
+        <p>Playing as <strong class="multiplayer-choice-name">Fencer</strong></p>
+        <button class="menu-button create-game-button" type="button">Create Game</button>
+        <button class="menu-button join-game-button" type="button">Join Game</button>
+        <button class="menu-button multiplayer-choice-back-button" type="button">Back</button>
+      </div>
+    </section>
+
+    <section class="lobby-menu is-hidden" aria-label="multiplayer lobby">
+      <h1>Lobby</h1>
+      <div class="lobby-panel">
+        <p>Join Code</p>
+        <div class="join-code-display">0000</div>
+        <p class="lobby-status">Waiting for another player...</p>
+        <ul class="lobby-players" aria-label="players in lobby">
+          <li class="lobby-player-one">Player 1</li>
+          <li class="lobby-player-two">Waiting...</li>
+        </ul>
+        <button class="menu-button lobby-back-button" type="button">Cancel</button>
+      </div>
+    </section>
+
+    <section class="join-menu is-hidden" aria-label="join multiplayer game">
+      <h1>Join Game</h1>
+      <form class="join-panel join-code-form">
+        <label>
+          Enter 4 digit code
+          <input class="join-code-input" type="text" inputmode="numeric" maxlength="4" autocomplete="off" placeholder="0000" />
+        </label>
+        <p class="join-status">Ask the host for their join code.</p>
+        <div class="menu-actions">
+          <button class="menu-button join-code-button" type="submit">Join Lobby</button>
+          <button class="menu-button join-code-back-button" type="button">Back</button>
         </div>
       </form>
     </section>
@@ -1488,6 +1592,22 @@
     const multiplayerNameForm = document.querySelector(".multiplayer-name-form");
     const multiplayerNameInput = document.querySelector(".multiplayer-name-input");
     const multiplayerNameBackButton = document.querySelector(".multiplayer-name-back-button");
+    const multiplayerChoiceMenu = document.querySelector(".multiplayer-choice-menu");
+    const multiplayerChoiceName = document.querySelector(".multiplayer-choice-name");
+    const createGameButton = document.querySelector(".create-game-button");
+    const joinGameButton = document.querySelector(".join-game-button");
+    const multiplayerChoiceBackButton = document.querySelector(".multiplayer-choice-back-button");
+    const lobbyMenu = document.querySelector(".lobby-menu");
+    const joinCodeDisplay = document.querySelector(".join-code-display");
+    const lobbyStatus = document.querySelector(".lobby-status");
+    const lobbyPlayerOne = document.querySelector(".lobby-player-one");
+    const lobbyPlayerTwo = document.querySelector(".lobby-player-two");
+    const lobbyBackButton = document.querySelector(".lobby-back-button");
+    const joinMenu = document.querySelector(".join-menu");
+    const joinCodeForm = document.querySelector(".join-code-form");
+    const joinCodeInput = document.querySelector(".join-code-input");
+    const joinStatus = document.querySelector(".join-status");
+    const joinCodeBackButton = document.querySelector(".join-code-back-button");
     const matchmakingMenu = document.querySelector(".matchmaking-menu");
     const matchmakingTitle = document.querySelector(".matchmaking-title");
     const matchmakingStatus = document.querySelector(".matchmaking-status");
@@ -1593,8 +1713,8 @@
     const DASH_COOLDOWN = 850;
     const MATCH_FOUND_DELAY = 2000;
     const MULTIPLAYER_STATE_INTERVAL = 50;
-    const MULTIPLAYER_APP_CONFIG = { appId: "blades-of-steel-szhang2187-v2" };
-    const MULTIPLAYER_LOBBY_ROOM = "public-matchmaking-v2";
+    const MULTIPLAYER_APP_CONFIG = { appId: "blades-of-steel-szhang2187-v3" };
+    const MULTIPLAYER_ROOM_PREFIX = "code-lobby-v1";
     const MULTIPLAYER_MAP_ID = "weizen";
     const SWING_SOUND_SRC = "assets/sword-swing.mp3";
     let swingVolume = .65;
@@ -1681,6 +1801,9 @@
     let settingsOpen = false;
     let helpOpen = false;
     let nameOpen = false;
+    let multiplayerChoiceOpen = false;
+    let lobbyOpen = false;
+    let joinOpen = false;
     let matchmakingOpen = false;
     let mapSelectOpen = false;
     let gameOver = false;
@@ -1694,13 +1817,14 @@
       remotePeerId: "",
       localName: "",
       remoteName: "",
+      joinCode: "",
       matchId: "",
       mapId: MULTIPLAYER_MAP_ID,
       isHost: false,
       localPlayerIndex: 0,
       remotePlayerIndex: 1,
       actions: null,
-      announceTimer: null,
+      lobbyPulseTimer: null,
       matchStartTimer: null,
       returnTimer: null,
       lastStateSentAt: 0
@@ -1731,7 +1855,7 @@
     }
 
     function uiBlocksGameInput() {
-      return menuOpen || settingsOpen || helpOpen || nameOpen || matchmakingOpen || mapSelectOpen || gameOver || roundResetTimer;
+      return menuOpen || settingsOpen || helpOpen || nameOpen || multiplayerChoiceOpen || lobbyOpen || joinOpen || matchmakingOpen || mapSelectOpen || gameOver || roundResetTimer;
     }
 
     function clearMultiplayerInputs() {
@@ -1846,6 +1970,13 @@
       gameFrame.classList.toggle("ui-mode", active);
     }
 
+    function hideMultiplayerSetupMenus() {
+      multiplayerChoiceMenu.classList.add("is-hidden");
+      lobbyMenu.classList.add("is-hidden");
+      joinMenu.classList.add("is-hidden");
+      matchmakingMenu.classList.add("is-hidden");
+    }
+
     function showMainMenu(randomizeBackground = false) {
       if (gameMode === "multiplayer" || multiplayer.status !== "idle") {
         stopMultiplayerSession();
@@ -1856,6 +1987,9 @@
       settingsOpen = false;
       helpOpen = false;
       nameOpen = false;
+      multiplayerChoiceOpen = false;
+      lobbyOpen = false;
+      joinOpen = false;
       matchmakingOpen = false;
       mapSelectOpen = false;
       gameOver = false;
@@ -1871,7 +2005,7 @@
       settingsMenu.classList.add("is-hidden");
       helpMenu.classList.add("is-hidden");
       nameMenu.classList.add("is-hidden");
-      matchmakingMenu.classList.add("is-hidden");
+      hideMultiplayerSetupMenus();
       mapSelect.classList.add("is-hidden");
       winnerBanner.classList.add("is-hidden");
       winnerBanner.classList.remove("no-replay");
@@ -1887,6 +2021,9 @@
       settingsOpen = false;
       helpOpen = false;
       nameOpen = false;
+      multiplayerChoiceOpen = false;
+      lobbyOpen = false;
+      joinOpen = false;
       matchmakingOpen = false;
       mapSelectOpen = true;
       gameOver = false;
@@ -1897,7 +2034,7 @@
       settingsMenu.classList.add("is-hidden");
       helpMenu.classList.add("is-hidden");
       nameMenu.classList.add("is-hidden");
-      matchmakingMenu.classList.add("is-hidden");
+      hideMultiplayerSetupMenus();
       winnerBanner.classList.add("is-hidden");
       winnerBanner.classList.remove("no-replay");
       winnerMessage.textContent = "";
@@ -1910,6 +2047,9 @@
       settingsOpen = true;
       helpOpen = false;
       nameOpen = false;
+      multiplayerChoiceOpen = false;
+      lobbyOpen = false;
+      joinOpen = false;
       matchmakingOpen = false;
       mapSelectOpen = false;
       heldKeys.clear();
@@ -1918,7 +2058,7 @@
       mapSelect.classList.add("is-hidden");
       helpMenu.classList.add("is-hidden");
       nameMenu.classList.add("is-hidden");
-      matchmakingMenu.classList.add("is-hidden");
+      hideMultiplayerSetupMenus();
       settingsMenu.classList.remove("is-hidden");
       volumeSlider.focus();
     }
@@ -1928,6 +2068,9 @@
       settingsOpen = false;
       helpOpen = true;
       nameOpen = false;
+      multiplayerChoiceOpen = false;
+      lobbyOpen = false;
+      joinOpen = false;
       matchmakingOpen = false;
       mapSelectOpen = false;
       heldKeys.clear();
@@ -1936,7 +2079,7 @@
       settingsMenu.classList.add("is-hidden");
       mapSelect.classList.add("is-hidden");
       nameMenu.classList.add("is-hidden");
-      matchmakingMenu.classList.add("is-hidden");
+      hideMultiplayerSetupMenus();
       helpMenu.classList.remove("is-hidden");
       helpBackButton.focus();
     }
@@ -1955,6 +2098,9 @@
       settingsOpen = false;
       helpOpen = false;
       nameOpen = true;
+      multiplayerChoiceOpen = false;
+      lobbyOpen = false;
+      joinOpen = false;
       matchmakingOpen = false;
       mapSelectOpen = false;
       gameOver = false;
@@ -1965,11 +2111,102 @@
       settingsMenu.classList.add("is-hidden");
       helpMenu.classList.add("is-hidden");
       mapSelect.classList.add("is-hidden");
-      matchmakingMenu.classList.add("is-hidden");
+      hideMultiplayerSetupMenus();
       winnerBanner.classList.add("is-hidden");
       nameMenu.classList.remove("is-hidden");
       multiplayerNameInput.focus();
       multiplayerNameInput.select();
+    }
+
+    function showMultiplayerChoice() {
+      menuOpen = false;
+      settingsOpen = false;
+      helpOpen = false;
+      nameOpen = false;
+      multiplayerChoiceOpen = true;
+      lobbyOpen = false;
+      joinOpen = false;
+      matchmakingOpen = false;
+      mapSelectOpen = false;
+      gameOver = false;
+      heldKeys.clear();
+      clearMultiplayerInputs();
+      setUiMode(true);
+      mainMenu.classList.add("is-hidden");
+      settingsMenu.classList.add("is-hidden");
+      helpMenu.classList.add("is-hidden");
+      nameMenu.classList.add("is-hidden");
+      mapSelect.classList.add("is-hidden");
+      matchmakingMenu.classList.add("is-hidden");
+      lobbyMenu.classList.add("is-hidden");
+      joinMenu.classList.add("is-hidden");
+      multiplayerChoiceName.textContent = multiplayer.localName || "Fencer";
+      multiplayerChoiceMenu.classList.remove("is-hidden");
+      createGameButton.focus();
+    }
+
+    function showJoinCodeScreen() {
+      menuOpen = false;
+      settingsOpen = false;
+      helpOpen = false;
+      nameOpen = false;
+      multiplayerChoiceOpen = false;
+      lobbyOpen = false;
+      joinOpen = true;
+      matchmakingOpen = false;
+      mapSelectOpen = false;
+      gameOver = false;
+      heldKeys.clear();
+      setUiMode(true);
+      mainMenu.classList.add("is-hidden");
+      settingsMenu.classList.add("is-hidden");
+      helpMenu.classList.add("is-hidden");
+      nameMenu.classList.add("is-hidden");
+      multiplayerChoiceMenu.classList.add("is-hidden");
+      lobbyMenu.classList.add("is-hidden");
+      matchmakingMenu.classList.add("is-hidden");
+      mapSelect.classList.add("is-hidden");
+      joinStatus.textContent = "Ask the host for their join code.";
+      joinMenu.classList.remove("is-hidden");
+      joinCodeInput.focus();
+      joinCodeInput.select();
+    }
+
+    function updateLobbyDisplay(statusText = lobbyStatus.textContent) {
+      const hostName = multiplayer.isHost ? multiplayer.localName : multiplayer.remoteName || "Host";
+      const guestName = multiplayer.isHost ? multiplayer.remoteName : multiplayer.localName;
+      joinCodeDisplay.textContent = multiplayer.joinCode || "0000";
+      lobbyStatus.textContent = statusText;
+      lobbyPlayerOne.textContent = `Host: ${hostName || "Waiting..."}`;
+      lobbyPlayerTwo.textContent = guestName ? `Player 2: ${guestName}` : "Player 2: Waiting...";
+    }
+
+    function showLobbyScreen(statusText = "Waiting for another player...") {
+      menuOpen = false;
+      settingsOpen = false;
+      helpOpen = false;
+      nameOpen = false;
+      multiplayerChoiceOpen = false;
+      lobbyOpen = true;
+      joinOpen = false;
+      matchmakingOpen = false;
+      mapSelectOpen = false;
+      gameOver = false;
+      heldKeys.clear();
+      clearMultiplayerInputs();
+      setUiMode(true);
+      mainMenu.classList.add("is-hidden");
+      settingsMenu.classList.add("is-hidden");
+      helpMenu.classList.add("is-hidden");
+      nameMenu.classList.add("is-hidden");
+      multiplayerChoiceMenu.classList.add("is-hidden");
+      joinMenu.classList.add("is-hidden");
+      matchmakingMenu.classList.add("is-hidden");
+      mapSelect.classList.add("is-hidden");
+      winnerBanner.classList.add("is-hidden");
+      updateLobbyDisplay(statusText);
+      lobbyMenu.classList.remove("is-hidden");
+      lobbyBackButton.focus();
     }
 
     function showMatchmakingScreen(title = "Looking for opponent...", status = "Searching for another player...") {
@@ -1977,6 +2214,9 @@
       settingsOpen = false;
       helpOpen = false;
       nameOpen = false;
+      multiplayerChoiceOpen = false;
+      lobbyOpen = false;
+      joinOpen = false;
       matchmakingOpen = true;
       mapSelectOpen = false;
       gameOver = false;
@@ -1987,6 +2227,9 @@
       settingsMenu.classList.add("is-hidden");
       helpMenu.classList.add("is-hidden");
       nameMenu.classList.add("is-hidden");
+      multiplayerChoiceMenu.classList.add("is-hidden");
+      lobbyMenu.classList.add("is-hidden");
+      joinMenu.classList.add("is-hidden");
       mapSelect.classList.add("is-hidden");
       winnerBanner.classList.add("is-hidden");
       matchmakingTitle.textContent = title;
@@ -2012,6 +2255,9 @@
       settingsOpen = false;
       helpOpen = false;
       nameOpen = false;
+      multiplayerChoiceOpen = false;
+      lobbyOpen = false;
+      joinOpen = false;
       matchmakingOpen = false;
       mapSelectOpen = false;
       setUiMode(false);
@@ -2019,7 +2265,7 @@
       settingsMenu.classList.add("is-hidden");
       helpMenu.classList.add("is-hidden");
       nameMenu.classList.add("is-hidden");
-      matchmakingMenu.classList.add("is-hidden");
+      hideMultiplayerSetupMenus();
       mapSelect.classList.add("is-hidden");
       resetMatch();
     }
@@ -2127,6 +2373,9 @@
       settingsOpen = false;
       helpOpen = false;
       nameOpen = false;
+      multiplayerChoiceOpen = false;
+      lobbyOpen = false;
+      joinOpen = false;
       matchmakingOpen = false;
       mapSelectOpen = false;
       setUiMode(false);
@@ -2134,7 +2383,7 @@
       settingsMenu.classList.add("is-hidden");
       helpMenu.classList.add("is-hidden");
       nameMenu.classList.add("is-hidden");
-      matchmakingMenu.classList.add("is-hidden");
+      hideMultiplayerSetupMenus();
       mapSelect.classList.add("is-hidden");
 
       winnerTransitionTimer = window.setTimeout(() => {
@@ -2360,8 +2609,8 @@
     }
 
     function stopMultiplayerSession() {
-      if (multiplayer.announceTimer) {
-        window.clearInterval(multiplayer.announceTimer);
+      if (multiplayer.lobbyPulseTimer) {
+        window.clearInterval(multiplayer.lobbyPulseTimer);
       }
 
       if (multiplayer.matchStartTimer) {
@@ -2389,13 +2638,14 @@
         remotePeerId: "",
         localName: "",
         remoteName: "",
+        joinCode: "",
         matchId: "",
         mapId: MULTIPLAYER_MAP_ID,
         isHost: false,
         localPlayerIndex: 0,
         remotePlayerIndex: 1,
         actions: null,
-        announceTimer: null,
+        lobbyPulseTimer: null,
         matchStartTimer: null,
         returnTimer: null,
         lastStateSentAt: 0
@@ -2403,54 +2653,77 @@
       clearMultiplayerInputs();
     }
 
-    function announceLooking(peerId) {
-      if (multiplayer.status !== "queue") {
-        return;
-      }
-
-      safeSend(multiplayer.actions?.sendLooking, {
-        seeking: true,
-        name: multiplayer.localName,
-        at: Date.now()
-      }, peerId);
+    function normalizeJoinCode(value) {
+      return String(value || "").replace(/\D/g, "").slice(0, 4);
     }
 
-    function setupMultiplayerRoom(module) {
-      const room = module.joinRoom(MULTIPLAYER_APP_CONFIG, MULTIPLAYER_LOBBY_ROOM);
-      const [sendLooking, getLooking] = room.makeAction("bos-looking");
-      const [sendMatch, getMatch] = room.makeAction("bos-match");
-      const [sendAccept, getAccept] = room.makeAction("bos-accept");
+    function generateJoinCode() {
+      return String(Math.floor(1000 + Math.random() * 9000));
+    }
+
+    function multiplayerRoomName(code) {
+      return `${MULTIPLAYER_ROOM_PREFIX}-${code}`;
+    }
+
+    function setupMultiplayerRoom(module, code) {
+      const room = module.joinRoom(MULTIPLAYER_APP_CONFIG, multiplayerRoomName(code));
+      const [sendJoin, getJoin] = room.makeAction("bos-join");
+      const [sendHost, getHost] = room.makeAction("bos-host");
       const [sendInput, getInput] = room.makeAction("bos-input");
       const [sendState, getState] = room.makeAction("bos-state");
 
       multiplayer.room = room;
       multiplayer.selfId = module.selfId || `${Date.now()}-${Math.random()}`;
-      multiplayer.actions = { sendLooking, sendMatch, sendAccept, sendInput, sendState };
+      multiplayer.actions = { sendJoin, sendHost, sendInput, sendState };
 
       room.onPeerJoin((peerId) => {
-        announceLooking(peerId);
+        if (multiplayer.isHost && multiplayer.status === "lobby") {
+          safeSend(multiplayer.actions?.sendHost, {
+            accepted: false,
+            code: multiplayer.joinCode,
+            hostName: multiplayer.localName,
+            status: "waiting"
+          }, peerId);
+        }
       });
 
       room.onPeerLeave((peerId) => {
+        if (peerId === multiplayer.remotePeerId && multiplayer.isHost && multiplayer.status === "lobby") {
+          multiplayer.remotePeerId = "";
+          multiplayer.remoteName = "";
+          updateLobbyDisplay("Waiting for another player...");
+          return;
+        }
+
         if (peerId === multiplayer.remotePeerId && multiplayer.status !== "idle") {
           showMatchmakingScreen("Opponent Left", "The other player disconnected. Returning to the main menu...");
           multiplayer.returnTimer = window.setTimeout(() => showMainMenu(false), MATCH_FOUND_DELAY);
         }
       });
 
-      getLooking((data, peerId) => handleMultiplayerLooking(data, peerId));
-      getMatch((data, peerId) => handleMultiplayerMatchOffer(data, peerId));
-      getAccept((data, peerId) => handleMultiplayerAccept(data, peerId));
+      getJoin((data, peerId) => handleLobbyJoinRequest(data, peerId));
+      getHost((data, peerId) => handleHostLobbyMessage(data, peerId));
       getInput((data, peerId) => handleMultiplayerInput(data, peerId));
       getState((data, peerId) => applyMultiplayerState(data, peerId));
     }
 
-    async function beginMultiplayerMatchmaking(rawName) {
+    function rememberMultiplayerName(rawName) {
+      gameMode = "multiplayer";
+      multiplayer.localName = sanitizePlayerName(rawName);
+      showMultiplayerChoice();
+    }
+
+    async function beginCreateGame() {
+      const localName = multiplayer.localName || sanitizePlayerName(multiplayerNameInput.value);
       stopMultiplayerSession();
       gameMode = "multiplayer";
       multiplayer.status = "connecting";
-      multiplayer.localName = sanitizePlayerName(rawName);
-      showMatchmakingScreen("Looking for opponent...", `Entering the queue as ${multiplayer.localName}...`);
+      multiplayer.localName = localName;
+      multiplayer.joinCode = generateJoinCode();
+      multiplayer.isHost = true;
+      multiplayer.localPlayerIndex = 0;
+      multiplayer.remotePlayerIndex = 1;
+      showLobbyScreen("Creating lobby...");
 
       try {
         const module = await loadTrystero();
@@ -2459,96 +2732,138 @@
           return;
         }
 
-        setupMultiplayerRoom(module);
-        multiplayer.status = "queue";
-        showMatchmakingScreen("Looking for opponent...", `Searching as ${multiplayer.localName}...`);
-        announceLooking();
-        multiplayer.announceTimer = window.setInterval(() => announceLooking(), 1500);
+        setupMultiplayerRoom(module, multiplayer.joinCode);
+        multiplayer.status = "lobby";
+        updateLobbyDisplay("Waiting for another player...");
       } catch (error) {
         console.error(error);
         multiplayer.status = "error";
-        showMatchmakingScreen("Connection Failed", "Could not reach the multiplayer network. Check your internet connection and try again.");
+        showMatchmakingScreen("Connection Failed", "Could not create the lobby. Check your internet connection and try again.");
       }
     }
 
-    function handleMultiplayerLooking(data, peerId) {
-      if (multiplayer.status !== "queue" || !data?.seeking || peerId === multiplayer.selfId) {
+    async function beginJoinGame(rawCode) {
+      const code = normalizeJoinCode(rawCode);
+
+      if (code.length !== 4) {
+        joinStatus.textContent = "Enter a valid 4 digit code.";
+        joinCodeInput.focus();
         return;
       }
 
-      if (String(multiplayer.selfId) > String(peerId)) {
-        return;
-      }
+      const localName = multiplayer.localName || sanitizePlayerName(multiplayerNameInput.value);
+      stopMultiplayerSession();
+      gameMode = "multiplayer";
+      multiplayer.status = "connecting";
+      multiplayer.localName = localName;
+      multiplayer.joinCode = code;
+      multiplayer.isHost = false;
+      multiplayer.localPlayerIndex = 1;
+      multiplayer.remotePlayerIndex = 0;
+      showLobbyScreen(`Joining lobby ${code}...`);
 
-      createMultiplayerMatch(peerId, sanitizePlayerName(data.name || "Opponent"));
+      try {
+        const module = await loadTrystero();
+
+        if (multiplayer.status !== "connecting") {
+          return;
+        }
+
+        setupMultiplayerRoom(module, code);
+        multiplayer.status = "joining";
+        updateLobbyDisplay(`Looking for host ${code}...`);
+        sendJoinRequest();
+        multiplayer.lobbyPulseTimer = window.setInterval(sendJoinRequest, 1000);
+      } catch (error) {
+        console.error(error);
+        multiplayer.status = "error";
+        showMatchmakingScreen("Connection Failed", "Could not join the lobby. Check the code and your internet connection.");
+      }
     }
 
-    function createMultiplayerMatch(peerId, remoteName) {
-      if (multiplayer.status !== "queue") {
+    function sendJoinRequest() {
+      if (multiplayer.status !== "joining") {
         return;
       }
 
-      const matchId = `${Date.now()}-${String(multiplayer.selfId).slice(0, 6)}-${String(peerId).slice(0, 6)}`;
-      Object.assign(multiplayer, {
-        status: "matched",
-        remotePeerId: peerId,
-        remoteName,
-        matchId,
-        mapId: MULTIPLAYER_MAP_ID,
-        isHost: true,
-        localPlayerIndex: 0,
-        remotePlayerIndex: 1
+      safeSend(multiplayer.actions?.sendJoin, {
+        code: multiplayer.joinCode,
+        name: multiplayer.localName,
+        at: Date.now()
       });
+    }
 
-      if (multiplayer.announceTimer) {
-        window.clearInterval(multiplayer.announceTimer);
-        multiplayer.announceTimer = null;
+    function handleLobbyJoinRequest(data, peerId) {
+      if (!multiplayer.isHost || data?.code !== multiplayer.joinCode || peerId === multiplayer.selfId) {
+        return;
       }
 
-      safeSend(multiplayer.actions?.sendMatch, {
-        target: peerId,
-        matchId,
+      if (multiplayer.status === "matched" && peerId === multiplayer.remotePeerId) {
+        safeSend(multiplayer.actions?.sendHost, {
+          accepted: true,
+          code: multiplayer.joinCode,
+          matchId: multiplayer.matchId,
+          mapId: multiplayer.mapId,
+          hostName: multiplayer.localName,
+          guestName: multiplayer.remoteName
+        }, peerId);
+        return;
+      }
+
+      if (multiplayer.status !== "lobby") {
+        return;
+      }
+
+      multiplayer.remotePeerId = peerId;
+      multiplayer.remoteName = sanitizePlayerName(data.name || "Opponent");
+      multiplayer.matchId = `${multiplayer.joinCode}-${Date.now()}`;
+      multiplayer.mapId = MULTIPLAYER_MAP_ID;
+      multiplayer.status = "matched";
+      updateLobbyDisplay(`${multiplayer.remoteName} joined.`);
+
+      safeSend(multiplayer.actions?.sendHost, {
+        accepted: true,
+        code: multiplayer.joinCode,
+        matchId: multiplayer.matchId,
         mapId: multiplayer.mapId,
         hostName: multiplayer.localName,
-        guestName: remoteName
+        guestName: multiplayer.remoteName
       }, peerId);
       showMatchFoundAndStart();
     }
 
-    function handleMultiplayerMatchOffer(data, peerId) {
-      if (multiplayer.status !== "queue" || peerId === multiplayer.selfId || (data?.target && data.target !== multiplayer.selfId)) {
+    function handleHostLobbyMessage(data, peerId) {
+      if (multiplayer.isHost || data?.code !== multiplayer.joinCode || peerId === multiplayer.selfId) {
         return;
       }
 
-      Object.assign(multiplayer, {
-        status: "matched",
-        remotePeerId: peerId,
-        remoteName: sanitizePlayerName(data.hostName || "Opponent"),
-        matchId: data.matchId,
-        mapId: data.mapId || MULTIPLAYER_MAP_ID,
-        isHost: false,
-        localPlayerIndex: 1,
-        remotePlayerIndex: 0
-      });
-
-      if (multiplayer.announceTimer) {
-        window.clearInterval(multiplayer.announceTimer);
-        multiplayer.announceTimer = null;
+      if (!data.accepted) {
+        multiplayer.remotePeerId = peerId;
+        multiplayer.remoteName = sanitizePlayerName(data.hostName || "Host");
+        updateLobbyDisplay(`Found host ${multiplayer.remoteName}. Joining...`);
+        return;
       }
 
-      safeSend(multiplayer.actions?.sendAccept, {
-        matchId: multiplayer.matchId,
-        name: multiplayer.localName
-      }, peerId);
+      if (multiplayer.status !== "joining" && multiplayer.status !== "lobby") {
+        return;
+      }
+
+      multiplayer.remotePeerId = peerId;
+      multiplayer.remoteName = sanitizePlayerName(data.hostName || "Host");
+      multiplayer.matchId = data.matchId;
+      multiplayer.mapId = data.mapId || MULTIPLAYER_MAP_ID;
+      multiplayer.status = "matched";
+      multiplayer.isHost = false;
+      multiplayer.localPlayerIndex = 1;
+      multiplayer.remotePlayerIndex = 0;
+
+      if (multiplayer.lobbyPulseTimer) {
+        window.clearInterval(multiplayer.lobbyPulseTimer);
+        multiplayer.lobbyPulseTimer = null;
+      }
+
+      updateLobbyDisplay(`Joined ${multiplayer.remoteName}'s lobby.`);
       showMatchFoundAndStart();
-    }
-
-    function handleMultiplayerAccept(data, peerId) {
-      if (!multiplayer.isHost || peerId !== multiplayer.remotePeerId || data?.matchId !== multiplayer.matchId) {
-        return;
-      }
-
-      multiplayer.remoteName = sanitizePlayerName(data.name || multiplayer.remoteName);
     }
 
     function showMatchFoundAndStart() {
@@ -2593,6 +2908,9 @@
       settingsOpen = false;
       helpOpen = false;
       nameOpen = false;
+      multiplayerChoiceOpen = false;
+      lobbyOpen = false;
+      joinOpen = false;
       matchmakingOpen = false;
       mapSelectOpen = false;
       setUiMode(false);
@@ -2600,7 +2918,7 @@
       settingsMenu.classList.add("is-hidden");
       helpMenu.classList.add("is-hidden");
       nameMenu.classList.add("is-hidden");
-      matchmakingMenu.classList.add("is-hidden");
+      hideMultiplayerSetupMenus();
       mapSelect.classList.add("is-hidden");
       previousTime = performance.now();
       resetMatch();
@@ -2828,7 +3146,7 @@
         return;
       }
 
-      if ((menuOpen || settingsOpen || helpOpen || nameOpen || matchmakingOpen) && targetElement?.closest("button") && (event.code === "Enter" || event.code === "Space")) {
+      if ((menuOpen || settingsOpen || helpOpen || nameOpen || multiplayerChoiceOpen || lobbyOpen || joinOpen || matchmakingOpen) && targetElement?.closest("button") && (event.code === "Enter" || event.code === "Space")) {
         return;
       }
 
@@ -2927,12 +3245,26 @@
     helpBackButton.addEventListener("click", () => showMainMenu(false));
     mapBackButton.addEventListener("click", () => showMainMenu(false));
     multiplayerNameBackButton.addEventListener("click", () => showMainMenu(false));
+    multiplayerChoiceBackButton.addEventListener("click", () => showMultiplayerNamePrompt());
+    createGameButton.addEventListener("click", () => beginCreateGame());
+    joinGameButton.addEventListener("click", () => showJoinCodeScreen());
+    joinCodeBackButton.addEventListener("click", () => showMultiplayerChoice());
+    lobbyBackButton.addEventListener("click", () => showMainMenu(false));
     cancelMatchmakingButton.addEventListener("click", () => showMainMenu(false));
     volumeSlider.addEventListener("input", () => setSwingVolume(volumeSlider.value));
 
     multiplayerNameForm.addEventListener("submit", (event) => {
       event.preventDefault();
-      beginMultiplayerMatchmaking(multiplayerNameInput.value);
+      rememberMultiplayerName(multiplayerNameInput.value);
+    });
+
+    joinCodeInput.addEventListener("input", () => {
+      joinCodeInput.value = normalizeJoinCode(joinCodeInput.value);
+    });
+
+    joinCodeForm.addEventListener("submit", (event) => {
+      event.preventDefault();
+      beginJoinGame(joinCodeInput.value);
     });
 
     helpTabButtons.forEach((button) => {
