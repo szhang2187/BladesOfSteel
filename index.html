@@ -61,13 +61,14 @@
       image-rendering: pixelated;
     }
 
-    /* Fighter elements are invisible hitboxes; the canvas draws the fighters. */
+    /* Fighter elements are invisible hitboxes; the canvas draws the fighters.
+       Keep these in step with FIGHTER_WIDTH_FRACTION and FIGHTER_HEIGHT_FRACTION in the script. */
     .fighter {
       position: absolute;
       left: 0;
       bottom: 0;
-      width: 6%;
-      height: 19%;
+      width: 3.6%;
+      height: 11.4%;
       visibility: hidden;
       pointer-events: none;
     }
@@ -739,13 +740,14 @@
       <div class="help-panel" data-help-panel="single">
         <p><strong>Player 1:</strong> A and D move, W jumps, W again double jumps, E attacks, and R dashes.</p>
         <p><strong>Player 2:</strong> Left and Right arrows move, Up jumps, Up again double jumps, Enter attacks, and / dashes.</p>
-        <p>Each sword hit deals 20 damage. Dashing briefly makes you invulnerable.</p>
+        <p><strong>Weapons:</strong> You start with fists (8 damage). Swords (20 damage, longer reach) appear on glowing platforms. Stand at one and press your attack key to grab it.</p>
+        <p>Dashing briefly makes you invulnerable.</p>
       </div>
       <div class="help-panel is-hidden" data-help-panel="multi">
         <p><strong>Multiplayer:</strong> Each player uses these controls on their own computer.</p>
         <p>A and D move, Space jumps, Space again double jumps, E attacks, and Q dashes forward.</p>
         <p><strong>Dash:</strong> You can't be hit while dashing, so use Q to slip through an attack.</p>
-        <p>Each sword hit deals 20 damage.</p>
+        <p><strong>Weapons:</strong> You start with fists (8 damage). Swords (20 damage, longer reach) appear on glowing platforms. Stand at one and press E to grab it.</p>
       </div>
       <button class="menu-button help-back-button" type="button">Back</button>
     </section>
@@ -810,7 +812,7 @@
       <div class="match-found-box is-hidden">Match Found!</div>
       <div class="matchmaking-panel">
         <p class="matchmaking-status">Connecting to the multiplayer network...</p>
-        <p><strong>Controls:</strong> A and D move, Space jumps, E attacks, and Q dashes forward through attacks.</p>
+        <p><strong>Controls:</strong> A and D move, Space jumps, E punches or grabs a sword, and Q dashes forward through attacks.</p>
         <p>Win by taking all three lives from your opponent.</p>
         <button class="menu-button cancel-matchmaking-button" type="button">Cancel</button>
       </div>
@@ -924,7 +926,9 @@
         attackReadyAt: 0,
         hasHitThisSwing: false,
         dashStartedAt: 0,
-        dashReadyAt: 0
+        dashReadyAt: 0,
+        weapon: "fists",
+        attackWeapon: "fists"
       },
       {
         el: document.querySelector(".fighter.two"),
@@ -957,7 +961,9 @@
         attackReadyAt: 0,
         hasHitThisSwing: false,
         dashStartedAt: 0,
-        dashReadyAt: 0
+        dashReadyAt: 0,
+        weapon: "fists",
+        attackWeapon: "fists"
       }
     ];
 
@@ -980,13 +986,27 @@
     const MULTIPLAYER_CONTROL_KEYS = new Set(Object.values(MULTIPLAYER_KEYS));
 
     // Combat, movement, timing, and match tuning values.
-    const ATTACK_DAMAGE = 20;
-    const ATTACK_DURATION = 260;
-    const ATTACK_COOLDOWN = 520;
-    const ATTACK_ACTIVE_START = 80;
-    const ATTACK_ACTIVE_END = 190;
-    const GRAVITY = 1450;
+    // Fighters start with fists; a sword from a weapon platform hits harder and reaches farther.
+    // Reach is measured in fighter widths past the attacker's leading edge; times are in ms.
+    const WEAPONS = {
+      fists: { damage: 8, reach: .8, duration: 200, activeStart: 50, activeEnd: 140, cooldown: 340 },
+      sword: { damage: 20, reach: 1.9, duration: 260, activeStart: 80, activeEnd: 190, cooldown: 520 }
+    };
+    // Movement scales with the frame, so every screen size plays the same.
+    const FIGHTER_WIDTH_FRACTION = .036;
+    const FIGHTER_HEIGHT_FRACTION = .114;
+    const GRAVITY_PER_HEIGHT = 2.4;
+    const JUMP_APEX_HEIGHT = .22;
+    const WALK_SPEED_PER_WIDTH = .17;
+    const DASH_SPEED_PER_WIDTH = .7;
     const MAX_AIR_JUMPS = 1;
+    // Weapon platforms appear one at a time, at random reachable spots, while someone is unarmed.
+    const WEAPON_FIRST_SPAWN_DELAY = 2500;
+    const WEAPON_RESPAWN_DELAY_MIN = 5000;
+    const WEAPON_RESPAWN_DELAY_MAX = 9000;
+    const WEAPON_PLATFORM_LINGER = 2500;
+    const WEAPON_PLATFORM_WIDTH = .085;
+    const WEAPON_PLATFORM_HEIGHT = .03;
     const STARTING_LIVES = 3;
     const ROUND_RESET_DELAY = 900;
     const WINNER_TO_MAP_DELAY = 3000;
@@ -1000,8 +1020,9 @@
     //   browse the web, including mobile data and school/office Wi-Fi.
     // - Direct: a WebRTC link set up by Trystero. Lower latency, but some networks block it.
     // Match traffic uses the direct link while it is healthy and falls back to the relay.
-    const MULTIPLAYER_APP_ID = "blades-of-steel-szhang2187-v5";
-    const MULTIPLAYER_ROOM_PREFIX = "code-lobby-v3";
+    // Bump these when the snapshot format changes so old and new pages never share a lobby.
+    const MULTIPLAYER_APP_ID = "blades-of-steel-szhang2187-v6";
+    const MULTIPLAYER_ROOM_PREFIX = "code-lobby-v4";
     const MULTIPLAYER_MAP_ID = "weizen";
     // Library versions are pinned: unpinned imports silently pulled in breaking API changes.
     const TRYSTERO_MODULE_URL = "https://cdn.jsdelivr.net/npm/@trystero-p2p/nostr@0.26.0/+esm";
@@ -1052,6 +1073,53 @@
     let attackKeys = new Map();
     let dashKeys = new Map();
 
+    // Map layouts, as fractions of the frame: [id, left, width, top height above the bottom, thickness].
+    // Every platform can be reached from the spawn platforms: tiers sit within one jump
+    // (JUMP_APEX_HEIGHT) or one double jump of a platform below that they overlap or nearly touch.
+    const WEIZEN_LAYOUT = [
+      ["weizen-main", .14, .72, .2, .045],
+      ["weizen-low-left", .05, .17, .36, .035],
+      ["weizen-low-mid", .415, .17, .38, .035],
+      ["weizen-low-right", .78, .17, .36, .035],
+      ["weizen-mid-left", .19, .15, .53, .035],
+      ["weizen-mid-right", .66, .15, .53, .035],
+      ["weizen-high-left", .02, .11, .67, .035],
+      ["weizen-high-mid", .41, .18, .69, .035],
+      ["weizen-high-right", .87, .11, .67, .035]
+    ];
+    const ASHIGARU_LAYOUT = [
+      ["ashigaru-ground", 0, 1, .14, .14, { render: false }],
+      ["ashigaru-low-left", .05, .17, .31, .03],
+      ["ashigaru-low-mid", .415, .17, .31, .03],
+      ["ashigaru-low-right", .78, .17, .31, .03],
+      ["ashigaru-mid-left", .22, .16, .48, .03],
+      ["ashigaru-mid-right", .62, .16, .48, .03],
+      ["ashigaru-high-left", .04, .14, .65, .03],
+      ["ashigaru-high-mid", .42, .16, .66, .03],
+      ["ashigaru-high-right", .82, .14, .65, .03]
+    ];
+    // Neo York keeps open air beside its side columns so weapon platforms have room to appear.
+    const NEO_LAYOUT = [
+      ["neo-low-left", .05, .18, .16, .03],
+      ["neo-low-right", .77, .18, .16, .03],
+      ["neo-mid-left", .02, .1, .4, .03],
+      ["neo-mid-right", .88, .1, .4, .03],
+      ["neo-high-left", .16, .12, .62, .03],
+      ["neo-high-right", .72, .12, .62, .03]
+    ];
+
+    function layoutPlatforms(frame, layout) {
+      return layout.map(([id, left, width, y, height, extra = {}]) => ({
+        id,
+        className: "",
+        left: frame.width * left,
+        width: frame.width * width,
+        y: frame.height * y,
+        height: frame.height * height,
+        ...extra
+      }));
+    }
+
     // Map definitions return platform geometry for the current frame.
     const maps = {
       weizen: {
@@ -1063,12 +1131,7 @@
         spawnMode: "shared",
         spawnPlatformId: "weizen-main",
         platforms(now, frame) {
-          return [
-            { id: "weizen-left", className: "left", left: frame.width * .05, width: frame.width * .23, y: frame.height * .51, height: frame.height * .06 },
-            { id: "weizen-mid", className: "mid", left: frame.width * .4, width: frame.width * .2, y: frame.height * .64, height: frame.height * .05 },
-            { id: "weizen-right", className: "right", left: frame.width * .72, width: frame.width * .23, y: frame.height * .53, height: frame.height * .06 },
-            { id: "weizen-main", className: "main", left: frame.width * .16, width: frame.width * .68, y: frame.height * .29, height: frame.height * .07 }
-          ];
+          return layoutPlatforms(frame, WEIZEN_LAYOUT);
         }
       },
       ashigaru: {
@@ -1080,9 +1143,7 @@
         spawnMode: "shared",
         spawnPlatformId: "ashigaru-ground",
         platforms(now, frame) {
-          return [
-            { id: "ashigaru-ground", className: "ground", left: 0, width: frame.width, y: frame.height * .26, height: frame.height * .26, render: false }
-          ];
+          return layoutPlatforms(frame, ASHIGARU_LAYOUT);
         }
       },
       neo: {
@@ -1092,27 +1153,36 @@
         roundTitle: "Neo York",
         voidKills: true,
         spawnMode: "lower-pair",
+        // Weapon platforms never spawn where the tram and the rotating ring sweep: [left, right, bottom, top].
+        weaponKeepOut: [[.27, .73, .25, .8]],
         platforms(now, frame) {
-          const centerX = frame.width * .5;
-          const centerY = frame.height * .47;
-          const radiusX = frame.width * .28;
-          const radiusY = frame.height * .19;
-          const width = frame.width * .26;
-          const height = frame.height * .055;
+          const thickness = frame.height * .03;
+          const tramWidth = frame.width * .16;
+          const ringWidth = frame.width * .11;
           const rotation = now * .00028;
-          const bases = [210, 330, 90];
-
-          return bases.map((base, index) => {
+          const tram = {
+            id: "neo-tram",
+            className: "",
+            moving: true,
+            left: frame.width * (.28 + (Math.sin(now * .0006) + 1) * .14),
+            width: tramWidth,
+            y: frame.height * .3,
+            height: thickness
+          };
+          const ring = [210, 330, 90].map((base, index) => {
             const angle = base * Math.PI / 180 - rotation;
             return {
-              id: `neo-${index}`,
-              className: "neo",
-              left: centerX + Math.cos(angle) * radiusX - width / 2,
-              width,
-              y: centerY + Math.sin(angle) * radiusY,
-              height
+              id: `neo-ring-${index}`,
+              className: "",
+              moving: true,
+              left: frame.width * (.5 + Math.cos(angle) * .15) - ringWidth / 2,
+              width: ringWidth,
+              y: frame.height * (.58 + Math.sin(angle) * .1),
+              height: thickness
             };
           });
+
+          return [...layoutPlatforms(frame, NEO_LAYOUT), tram, ...ring];
         }
       }
     };
@@ -1132,6 +1202,9 @@
     let gameOver = false;
     let roundResetTimer = null;
     let winnerTransitionTimer = null;
+    const weaponPlatforms = [];
+    let nextWeaponId = 1;
+    let nextWeaponSpawnAt = 0;
     const multiplayerModulePromises = new Map();
 
     // Multiplayer session state shared by lobby, match start, and network sync.
@@ -1181,7 +1254,7 @@
 
     function stageBounds() {
       const frameWidth = gameFrame.clientWidth;
-      const fighterWidth = players[0].el.offsetWidth || frameWidth * 0.06;
+      const fighterWidth = players[0].el.offsetWidth || frameWidth * FIGHTER_WIDTH_FRACTION;
       return {
         min: 0,
         max: frameWidth - fighterWidth,
@@ -1196,8 +1269,23 @@
       };
     }
 
+    // Weapon platforms are real platforms (fighters can stand on them) that carry a sword.
+    // The host, or the local game, owns this list; a multiplayer guest mirrors it from snapshots.
+    function weaponPlatformRects(frame) {
+      return weaponPlatforms.map((weapon) => ({
+        id: `weapon-${weapon.id}`,
+        className: "weapon",
+        weapon,
+        left: weapon.left * frame.width,
+        width: WEAPON_PLATFORM_WIDTH * frame.width,
+        y: weapon.y * frame.height,
+        height: WEAPON_PLATFORM_HEIGHT * frame.height
+      }));
+    }
+
     function mapPlatformRects(now = performance.now()) {
-      return currentMap.platforms(now, frameSize()).map((platform) => ({
+      const frame = frameSize();
+      return [...currentMap.platforms(now, frame), ...weaponPlatformRects(frame)].map((platform) => ({
         ...platform,
         right: platform.left + platform.width,
         centerX: platform.left + platform.width / 2
@@ -1205,7 +1293,7 @@
     }
 
     function playerFootSpan(player) {
-      const fighterWidth = player.el.offsetWidth || gameFrame.clientWidth * 0.06;
+      const fighterWidth = player.el.offsetWidth || gameFrame.clientWidth * FIGHTER_WIDTH_FRACTION;
 
       return {
         left: player.x + fighterWidth * 0.2,
@@ -1557,12 +1645,21 @@
     }
 
     // Player movement helpers and action starters.
+    function gravity() {
+      return gameFrame.clientHeight * GRAVITY_PER_HEIGHT;
+    }
+
+    // Launch speed that peaks exactly JUMP_APEX_HEIGHT of the frame above the take-off point.
     function jumpVelocity() {
-      return clamp(gameFrame.clientHeight * 1.28, 700, 980);
+      return Math.sqrt(2 * GRAVITY_PER_HEIGHT * JUMP_APEX_HEIGHT) * gameFrame.clientHeight;
+    }
+
+    function walkSpeed() {
+      return gameFrame.clientWidth * WALK_SPEED_PER_WIDTH;
     }
 
     function dashSpeed() {
-      return clamp(gameFrame.clientWidth * 1.85, 950, 1600);
+      return gameFrame.clientWidth * DASH_SPEED_PER_WIDTH;
     }
 
     function movementDirectionForPlayer(playerIndex) {
@@ -1575,12 +1672,151 @@
       return Number(heldKeys.has(player.rightKey)) - Number(heldKeys.has(player.leftKey));
     }
 
-    function playSwingSound() {
+    function playSwingSound(weapon = "sword") {
       const sound = swingSounds[nextSwingSound];
+      const punch = weapon !== "sword";
       nextSwingSound = (nextSwingSound + 1) % swingSounds.length;
       sound.currentTime = 0;
-      sound.volume = swingVolume;
+      // Punches reuse the sword sample, sped up and softened into a lighter whoosh.
+      sound.preservesPitch = false;
+      sound.playbackRate = punch ? 1.6 : 1;
+      sound.volume = swingVolume * (punch ? .7 : 1);
       sound.play().catch(() => {});
+    }
+
+    let pickupAudioContext = null;
+
+    // A short rising chime, synthesized so no extra sound file is needed.
+    function playPickupSound() {
+      try {
+        pickupAudioContext ||= new (window.AudioContext || window.webkitAudioContext)();
+        const start = pickupAudioContext.currentTime;
+        const gain = pickupAudioContext.createGain();
+        gain.gain.setValueAtTime(.0001, start);
+        gain.gain.exponentialRampToValueAtTime(.12 * swingVolume + .0001, start + .02);
+        gain.gain.exponentialRampToValueAtTime(.0001, start + .36);
+        gain.connect(pickupAudioContext.destination);
+        [[988, 0], [1319, .08], [1976, .16]].forEach(([frequency, offset]) => {
+          const tone = pickupAudioContext.createOscillator();
+          tone.type = "square";
+          tone.frequency.setValueAtTime(frequency, start + offset);
+          tone.connect(gain);
+          tone.start(start + offset);
+          tone.stop(start + offset + .1);
+        });
+      } catch (error) {
+        // Sound is optional; some browsers block audio until the page is interacted with.
+      }
+    }
+
+    // Weapon platforms: spawning, expiry, and pickup. Only the host (or the local game) runs these.
+    function resetWeapons(now = performance.now()) {
+      weaponPlatforms.length = 0;
+      nextWeaponSpawnAt = now + WEAPON_FIRST_SPAWN_DELAY;
+      players.forEach((player) => {
+        player.weapon = "fists";
+        player.attackWeapon = "fists";
+      });
+    }
+
+    // Picks a random spot that does not crowd other platforms and that a fighter can reach
+    // from a fixed platform below with one jump (or a double jump from directly underneath).
+    function chooseWeaponSpot(now) {
+      const frame = frameSize();
+      const platforms = currentMap.platforms(now, frame).map((platform) => ({
+        left: platform.left / frame.width,
+        right: (platform.left + platform.width) / frame.width,
+        y: platform.y / frame.height,
+        moving: platform.moving
+      }));
+      const keepOut = currentMap.weaponKeepOut || [];
+
+      for (let attempt = 0; attempt < 150; attempt += 1) {
+        const left = .04 + Math.random() * (.92 - WEAPON_PLATFORM_WIDTH);
+        const right = left + WEAPON_PLATFORM_WIDTH;
+        const y = .26 + Math.random() * .44;
+        // Keep more than a fighter's height of air above and below any platform it overlaps.
+        const crowded = platforms.some((platform) => platform.left < right + .02 && platform.right > left - .02 && Math.abs(platform.y - y) < .125);
+        const blocked = keepOut.some(([keepLeft, keepRight, keepBottom, keepTop]) => left < keepRight && right > keepLeft && y > keepBottom && y < keepTop);
+        // A jump must top out below any platform overhead, or it carries the fighter past the
+        // sword and onto that platform instead.
+        const headroom = Math.min(Infinity, ...platforms
+          .filter((platform) => platform.left < right && platform.right > left && platform.y > y)
+          .map((platform) => platform.y - y));
+        const reachable = platforms.some((platform) => {
+          const rise = y - platform.y;
+          const gap = Math.max(0, platform.left - right, left - platform.right);
+          const singleJump = rise <= .19 && gap <= .05 && JUMP_APEX_HEIGHT - rise < headroom - .02;
+          const doubleJump = rise <= .34 && gap <= .01 && headroom >= .3;
+          return !platform.moving && rise > .05 && (singleJump || doubleJump);
+        });
+
+        if (!crowded && !blocked && reachable) {
+          return { left, y };
+        }
+      }
+
+      return null;
+    }
+
+    function updateWeapons(now) {
+      for (let index = weaponPlatforms.length - 1; index >= 0; index -= 1) {
+        const weapon = weaponPlatforms[index];
+
+        if (weapon.takenAt && now - weapon.takenAt > WEAPON_PLATFORM_LINGER) {
+          weaponPlatforms.splice(index, 1);
+        }
+      }
+
+      const swordWaiting = weaponPlatforms.some((weapon) => !weapon.takenAt);
+      const someoneUnarmed = players.some((player) => player.weapon !== "sword");
+
+      if (now < nextWeaponSpawnAt || swordWaiting || !someoneUnarmed) {
+        return;
+      }
+
+      const spot = chooseWeaponSpot(now);
+
+      if (!spot) {
+        nextWeaponSpawnAt = now + 500;
+        return;
+      }
+
+      weaponPlatforms.push({ id: nextWeaponId, left: spot.left, y: spot.y, spawnedAt: now, takenAt: 0 });
+      nextWeaponId += 1;
+    }
+
+    // A fighter can grab a sword while standing on its platform or jumping up beside it.
+    function nearbyWeaponPlatform(player, rects) {
+      const width = player.el.offsetWidth || gameFrame.clientWidth * FIGHTER_WIDTH_FRACTION;
+      const height = player.el.offsetHeight || gameFrame.clientHeight * FIGHTER_HEIGHT_FRACTION;
+      const center = player.x + width / 2;
+
+      return rects.find((rect) => rect.weapon && !rect.weapon.takenAt
+        && Math.abs(center - (rect.left + rect.width / 2)) <= rect.width / 2 + width * .6
+        && player.y >= rect.y - height * .5
+        && player.y <= rect.y + height * .8) || null;
+    }
+
+    function tryPickUpWeapon(playerIndex, now) {
+      const player = players[playerIndex];
+
+      if (player.weapon === "sword") {
+        return false;
+      }
+
+      const target = nearbyWeaponPlatform(player, weaponPlatformRects(frameSize()));
+
+      if (!target) {
+        return false;
+      }
+
+      target.weapon.takenAt = now;
+      player.weapon = "sword";
+      nextWeaponSpawnAt = now + WEAPON_RESPAWN_DELAY_MIN + Math.random() * (WEAPON_RESPAWN_DELAY_MAX - WEAPON_RESPAWN_DELAY_MIN);
+      playPickupSound();
+      sendMultiplayerState(true);
+      return true;
     }
 
     function playLifeLostSound() {
@@ -1762,13 +1998,17 @@
       }
     }
 
+    function attackProfile(player) {
+      return WEAPONS[player.attackWeapon] || WEAPONS.fists;
+    }
+
     function attackHitLands(attacker, defender) {
       const frameWidth = gameFrame.clientWidth;
-      const attackerWidth = attacker.el.offsetWidth || frameWidth * 0.06;
-      const defenderWidth = defender.el.offsetWidth || frameWidth * 0.06;
-      const attackerHeight = attacker.el.offsetHeight || gameFrame.clientHeight * 0.19;
-      const defenderHeight = defender.el.offsetHeight || gameFrame.clientHeight * 0.19;
-      const reach = clamp(frameWidth * 0.14, 105, 180);
+      const attackerWidth = attacker.el.offsetWidth || frameWidth * FIGHTER_WIDTH_FRACTION;
+      const defenderWidth = defender.el.offsetWidth || frameWidth * FIGHTER_WIDTH_FRACTION;
+      const attackerHeight = attacker.el.offsetHeight || gameFrame.clientHeight * FIGHTER_HEIGHT_FRACTION;
+      const defenderHeight = defender.el.offsetHeight || gameFrame.clientHeight * FIGHTER_HEIGHT_FRACTION;
+      const reach = attackerWidth * attackProfile(attacker).reach;
       const attackOrigin = attacker.x + (attacker.facing === 1 ? attackerWidth * 0.82 : attackerWidth * 0.18);
       const attackEnd = attackOrigin + attacker.facing * reach;
       const defenderLeft = defender.x;
@@ -1795,7 +2035,7 @@
         return false;
       }
 
-      damagePlayer(defenderIndex, ATTACK_DAMAGE);
+      damagePlayer(defenderIndex, attackProfile(attacker).damage);
       return true;
     }
 
@@ -1803,23 +2043,35 @@
       const player = players[playerIndex];
       const now = performance.now();
 
-      if (!player || player.isDead || gameOver || roundResetTimer || player.isDashing || player.isAttacking || now < player.attackReadyAt) {
+      if (!player || player.isDead || gameOver || roundResetTimer || player.isDashing) {
         return;
       }
 
+      // The attack key doubles as "pick up" when an unarmed fighter is at a sword.
+      if (tryPickUpWeapon(playerIndex, now)) {
+        return;
+      }
+
+      if (player.isAttacking || now < player.attackReadyAt) {
+        return;
+      }
+
+      // The weapon is locked in when the swing starts, so a pickup mid-punch can't change it.
+      player.attackWeapon = player.weapon;
+      const attack = attackProfile(player);
       player.isAttacking = true;
       player.attackStartedAt = now;
-      player.attackReadyAt = now + ATTACK_COOLDOWN;
+      player.attackReadyAt = now + attack.cooldown;
       player.hasHitThisSwing = false;
       player.el.classList.remove("is-attacking", "is-walking");
       void player.el.offsetWidth;
       player.el.classList.add("is-attacking");
-      playSwingSound();
+      playSwingSound(player.attackWeapon);
 
       window.setTimeout(() => {
         player.isAttacking = false;
         player.el.classList.remove("is-attacking");
-      }, ATTACK_DURATION);
+      }, attack.duration);
     }
 
     // Round and full-match reset helpers.
@@ -1847,6 +2099,8 @@
         player.dashReadyAt = 0;
         player.el.classList.remove("is-attacking", "is-dashing", "is-dead", "is-hit", "is-walking");
       });
+      // Every round starts with bare fists and a fresh race for the first sword.
+      resetWeapons();
       placePlayers();
       sendMultiplayerState(true);
     }
@@ -2573,7 +2827,9 @@
         isDead: player.isDead,
         isAttacking: player.isAttacking,
         isDashing: player.isDashing,
-        isWalking: player.el.classList.contains("is-walking")
+        isWalking: player.el.classList.contains("is-walking"),
+        weapon: player.weapon,
+        attackWeapon: player.attackWeapon
       };
     }
 
@@ -2598,7 +2854,15 @@
         gameOver,
         winnerVisible: !winnerBanner.classList.contains("is-hidden"),
         winnerMessage: winnerMessage.textContent,
-        players: players.map((player) => serializeMultiplayerPlayer(player, frame))
+        players: players.map((player) => serializeMultiplayerPlayer(player, frame)),
+        // Ages rather than timestamps, since the two computers' clocks don't match.
+        weapons: weaponPlatforms.map((weapon) => ({
+          id: weapon.id,
+          left: weapon.left,
+          y: weapon.y,
+          age: now - weapon.spawnedAt,
+          takenAge: weapon.takenAt ? now - weapon.takenAt : -1
+        }))
       });
     }
 
@@ -2621,6 +2885,17 @@
 
       roundLabel.textContent = data.roundLabel || currentMap.roundTitle;
       gameOver = Boolean(data.gameOver);
+      const now = performance.now();
+      weaponPlatforms.length = 0;
+      (data.weapons || []).forEach((weapon) => {
+        weaponPlatforms.push({
+          id: weapon.id,
+          left: weapon.left,
+          y: weapon.y,
+          spawnedAt: now - weapon.age,
+          takenAt: weapon.takenAge >= 0 ? now - weapon.takenAge : 0
+        });
+      });
 
       data.players?.forEach((snapshot, index) => {
         const player = players[index];
@@ -2631,8 +2906,15 @@
 
         // The host plays these effects itself; replay them from the snapshot changes here.
         if (snapshot.isAttacking && !player.isAttacking) {
-          playSwingSound();
+          playSwingSound(snapshot.attackWeapon);
         }
+
+        if (snapshot.weapon === "sword" && player.weapon !== "sword") {
+          playPickupSound();
+        }
+
+        player.weapon = snapshot.weapon || "fists";
+        player.attackWeapon = snapshot.attackWeapon || player.weapon;
 
         if (snapshot.hp < player.hp) {
           flashHit(player);
@@ -2681,7 +2963,7 @@
 
       players.forEach((player, index) => {
         const platform = spawns[index] || spawns[0] || mainPlatform();
-        const fighterWidth = player.el.offsetWidth || bounds.width * .06;
+        const fighterWidth = player.el.offsetWidth || bounds.width * FIGHTER_WIDTH_FRACTION;
         player.x = currentMap.spawnMode === "lower-pair"
           ? clamp(platform.centerX - fighterWidth / 2, bounds.min, bounds.max)
           : clamp(bounds.width * player.start, bounds.min, bounds.max);
@@ -2875,18 +3157,20 @@
       const delta = Math.min((now - previousTime) / 1000, 0.05);
       previousTime = now;
 
-      const bounds = stageBounds();
-      const speed = clamp(bounds.width * 0.22, 150, 260);
-      const burstSpeed = dashSpeed();
-      const platforms = mapPlatformRects(now);
-      const previousPlatforms = mapPlatformRects(now - delta * 1000);
-
       // Menus, round breaks, and the multiplayer guest only render; the host runs physics.
       if (uiBlocksGameInput() || (multiplayerMatchActive() && !multiplayer.isHost)) {
         renderScene(now);
         requestAnimationFrame(update);
         return;
       }
+
+      updateWeapons(now);
+      const bounds = stageBounds();
+      const speed = walkSpeed();
+      const burstSpeed = dashSpeed();
+      const fall = gravity();
+      const platforms = mapPlatformRects(now);
+      const previousPlatforms = mapPlatformRects(now - delta * 1000);
 
       players.forEach((player, index) => {
         if (player.isDead) {
@@ -2938,7 +3222,7 @@
 
         if (!player.grounded) {
           const previousY = player.y;
-          player.vy -= GRAVITY * delta;
+          player.vy -= fall * delta;
           player.y += player.vy * delta;
 
           if (player.vy <= 0) {
@@ -2957,9 +3241,10 @@
         }
 
         if (player.isAttacking) {
+          const attack = attackProfile(player);
           const attackElapsed = now - player.attackStartedAt;
 
-          if (!player.hasHitThisSwing && attackElapsed >= ATTACK_ACTIVE_START && attackElapsed <= ATTACK_ACTIVE_END) {
+          if (!player.hasHitThisSwing && attackElapsed >= attack.activeStart && attackElapsed <= attack.activeEnd) {
             player.hasHitThisSwing = tryAttackHit(index);
           }
         }
@@ -3058,6 +3343,23 @@
         { lying: true, scarf: 6 }
       ]
     };
+
+    // Unarmed fighters hold both fists up in a guard and throw a straight jab instead of a lunge.
+    function guardArms([x, y]) {
+      return {
+        armF: [[x + 2, y - 2], [x + 6, y + 3], [x + 9, y - 2]],
+        armB: [[x - 2, y - 2], [x + 2, y + 3], [x + 6, y - 5]]
+      };
+    }
+
+    const FIST_ATTACK_POSES = [
+      { head: [-4, -41], chest: [-1, -28], waist: [-1, -22], front: [[1, -19], [5, -10], [6, -1]], back: [[-2, -19], [-6, -10], [-10, -1]],
+        armF: [[1, -30], [4, -25], [5, -30]], armB: [[-3, -30], [1, -25], [5, -33]], scarf: 0 },
+      { head: [1, -40], chest: [3, -27], waist: [1, -21], front: [[3, -18], [9, -10], [11, -1]], back: [[0, -18], [-4, -10], [-9, -1]],
+        armF: [[5, -29], [11, -29], [17, -29]], armB: [[1, -29], [5, -25], [8, -32]], scarf: 2 },
+      { head: [-1, -41], chest: [1, -28], waist: [0, -22], front: [[2, -19], [7, -10], [9, -1]], back: [[-1, -19], [-5, -10], [-10, -1]],
+        armF: [[3, -30], [8, -27], [12, -29]], armB: [[-1, -30], [3, -25], [7, -33]], scarf: 1 }
+    ];
 
     function hexToPixel(hex) {
       const value = parseInt(hex.slice(1), 16);
@@ -3236,14 +3538,24 @@
       }
     }
 
-    function drawArm(buffer, palette, joints, shaded) {
+    function drawArm(buffer, palette, joints, shaded, fist = false) {
       const sleeve = hexToPixel(shaded ? palette.tunicShade : palette.tunic);
       const skin = hexToPixel(shaded ? palette.skinShade : palette.skin);
+      const [handX, handY] = joints[2];
       drawStroke(buffer, joints, 2, [sleeve, skin], hexToPixel(palette.outline));
-      stampSquare(buffer, joints[2][0], joints[2][1], 2, hexToPixel(palette.glove));
+
+      // A bare fist is drawn larger and outlined so it reads as the weapon.
+      if (fist) {
+        stampSquare(buffer, handX, handY, 5, hexToPixel(palette.outline));
+        stampSquare(buffer, handX, handY, 3, hexToPixel(palette.glove));
+        plotPixel(buffer, handX - 1, handY - 1, hexToPixel(palette.skin));
+        return;
+      }
+
+      stampSquare(buffer, handX, handY, 2, hexToPixel(palette.glove));
     }
 
-    function drawLyingFighter(buffer, palette) {
+    function drawLyingFighter(buffer, palette, armed) {
       const ground = SPRITE_ORIGIN_Y - 3;
       const outline = hexToPixel(palette.outline);
       drawStroke(buffer, [toSprite([-6, -3]), toSprite([3, -3])], 5, [hexToPixel(palette.tunic)], outline);
@@ -3251,41 +3563,50 @@
       drawLeg(buffer, palette, [toSprite([4, -3]), toSprite([10, -6]), toSprite([15, -2])], true);
       drawLeg(buffer, palette, [toSprite([4, -2]), toSprite([11, -2]), toSprite([17, -2])], false);
       drawHead(buffer, palette, [SPRITE_ORIGIN_X - 15, ground - 6], true);
-      drawSword(buffer, palette, toSprite([-2, 0]), -4, SWORD_LENGTH - 4);
+
+      if (armed) {
+        drawSword(buffer, palette, toSprite([-2, 0]), -4, SWORD_LENGTH - 4);
+      }
+
       drawArm(buffer, palette, [toSprite([-4, -4]), toSprite([-1, -1]), toSprite([3, 0])], false);
     }
 
-    function renderFighterSprite(paletteIndex, poseName, frame, scarfPhase, swordLength) {
+    // Returns the sprite plus the tip of its weapon (sword point or leading fist) for effects.
+    function renderFighterSprite(paletteIndex, poseName, frame, scarfPhase, armed) {
       const palette = FIGHTER_PALETTES[paletteIndex];
       const buffer = createPixelBuffer(SPRITE_W, SPRITE_H);
-      const poses = FIGHTER_POSES[poseName];
-      const pose = poses[frame % poses.length];
-      let swordTip = null;
+      const poses = !armed && poseName === "attack" ? FIST_ATTACK_POSES : FIGHTER_POSES[poseName];
+      let pose = poses[frame % poses.length];
+
+      if (!armed && (poseName === "idle" || poseName === "walk")) {
+        pose = { ...pose, ...guardArms(pose.chest) };
+      }
 
       if (pose.lying) {
-        drawLyingFighter(buffer, palette);
-        return { buffer, swordTip };
+        drawLyingFighter(buffer, palette, armed);
+        return { buffer, tip: null };
       }
 
       const p = (point) => toSprite(point);
       const neck = p([pose.chest[0] - 2, pose.chest[1] - 3]);
       const scarf = scarfJoints(neck, pose.scarf, scarfPhase);
       drawStroke(buffer, scarf, 2, [hexToPixel(palette.scarf), hexToPixel(palette.scarfShade), hexToPixel(palette.scarf)], hexToPixel(palette.outline));
-      drawArm(buffer, palette, pose.armB.map(p), true);
+      drawArm(buffer, palette, pose.armB.map(p), true, !armed);
       drawLeg(buffer, palette, pose.back.map(p), true);
       drawLeg(buffer, palette, pose.front.map(p), false);
       drawTorso(buffer, palette, p(pose.chest), p(pose.waist));
       drawStroke(buffer, [neck, [neck[0] + 4, neck[1]]], 2, [hexToPixel(palette.scarf)], hexToPixel(palette.outline));
       drawHead(buffer, palette, p(pose.head));
       const hand = p(pose.armF[2]);
-      swordTip = drawSword(buffer, palette, hand, pose.sword, swordLength).tip;
-      drawArm(buffer, palette, pose.armF.map(p), false);
-      return { buffer, swordTip };
+      const tip = armed ? drawSword(buffer, palette, hand, pose.sword, SWORD_LENGTH).tip : [hand[0] + 2, hand[1]];
+      drawArm(buffer, palette, pose.armF.map(p), false, !armed);
+      return { buffer, tip };
     }
 
-    // Pixel-art scenes. Each map is drawn on one low-resolution canvas (216 pixels tall)
+    // Pixel-art scenes. Each map is drawn on one low-resolution canvas (360 pixels tall)
     // that the page scales up with crisp pixels, the same way a 16-bit console would.
-    const SCENE_HEIGHT = 216;
+    // The 41-pixel fighters fill about a ninth of that height, which leaves a roomy arena.
+    const SCENE_HEIGHT = 360;
     const BAYER_4 = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5].map((value) => (value + .5) / 16);
     const REDUCE_MOTION = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     const sceneCtx = sceneCanvas.getContext("2d");
@@ -3295,6 +3616,8 @@
       sprites: new Map(),
       particles: [],
       afterimages: [],
+      pickupSword: null,
+      seenWeapons: new Set(),
       shake: 0,
       flash: 0,
       lastTime: 0
@@ -3308,6 +3631,7 @@
       isDashing: false,
       grounded: true,
       airJumpsUsed: 0,
+      weapon: "fists",
       attackStart: -Infinity,
       hitStart: -Infinity,
       deadStart: -Infinity,
@@ -3432,30 +3756,35 @@
         [0, "#24508a"], [.12, "#3a6fa6"], [.25, "#689fc3"], [.36, "#a6bfc7"], [.44, "#d9b48e"],
         [.52, "#eec48c"], [.6, "#f6d696"], [.67, "#fbe5b0"], [1, "#fbe5b0"]
       ]);
+      // Scenery sizes were tuned on a 216-pixel-tall scene; size scales them to the current one.
+      const size = height / 216;
       const sunX = Math.round(width * .14);
       const sunY = Math.round(height * .2);
-      ditherDisc(sky.ctx, sunX, sunY, 30, "#ffe9b8", .22);
-      ditherDisc(sky.ctx, sunX, sunY, 23, "#fff2cf", .5);
-      pixelDisc(sky.ctx, sunX, sunY, 16, "#fff0c4");
-      pixelDisc(sky.ctx, sunX - 2, sunY - 2, 12, "#fffbe9");
+      ditherDisc(sky.ctx, sunX, sunY, Math.round(30 * size * .85), "#ffe9b8", .22);
+      ditherDisc(sky.ctx, sunX, sunY, Math.round(23 * size * .85), "#fff2cf", .5);
+      pixelDisc(sky.ctx, sunX, sunY, Math.round(16 * size * .85), "#fff0c4");
+      pixelDisc(sky.ctx, sunX - 2, sunY - 2, Math.round(12 * size * .85), "#fffbe9");
 
-      const clouds = Array.from({ length: 7 }, () => {
-        const cloudWidth = 22 + Math.floor(random() * 28);
-        const layer = createLayer(cloudWidth + 6, 14);
+      const cloudScale = size * .85;
+      const clouds = Array.from({ length: 9 }, () => {
+        const cloudWidth = Math.round((22 + random() * 28) * cloudScale);
+        const cloudHeight = Math.round(14 * cloudScale);
+        const lift = Math.max(2, Math.round(2 * cloudScale));
+        const layer = createLayer(cloudWidth + 8, cloudHeight + 2);
         const puffs = Array.from({ length: 3 + Math.floor(random() * 3) }, () => {
-          const radius = 3 + Math.floor(random() * 3);
-          return [radius + 2 + Math.floor(random() * Math.max(1, cloudWidth - radius * 2)), 13 - radius, radius];
+          const radius = Math.round((3 + random() * 2.5) * cloudScale);
+          return [radius + 3 + Math.floor(random() * Math.max(1, cloudWidth - radius * 2)), cloudHeight - radius, radius];
         });
         puffs.forEach(([x, y, radius]) => pixelDisc(layer.ctx, x, y, radius, "#eec19f"));
-        puffs.forEach(([x, y, radius]) => pixelDisc(layer.ctx, x, y - 2, radius, "#fff1dc"));
-        puffs.forEach(([x, y, radius]) => pixelDisc(layer.ctx, x - 1, y - 3, Math.max(1, radius - 2), "#ffffff"));
-        return { canvas: layer.canvas, x: random() * width, y: 8 + Math.floor(random() * height * .27), speed: 1.5 + random() * 3 };
+        puffs.forEach(([x, y, radius]) => pixelDisc(layer.ctx, x, y - lift, radius, "#fff1dc"));
+        puffs.forEach(([x, y, radius]) => pixelDisc(layer.ctx, x - 1, y - lift - 1, Math.max(1, radius - lift), "#ffffff"));
+        return { canvas: layer.canvas, x: random() * width, y: Math.round(height * .04 + random() * height * .27), speed: 1.5 + random() * 3 };
       });
-      const birds = Array.from({ length: 4 }, () => ({ x: random() * width, y: 26 + random() * height * .2, speed: 7 + random() * 6, phase: random() * 6 }));
+      const birds = Array.from({ length: 7 }, () => ({ x: random() * width, y: height * .1 + random() * height * .2, speed: 7 + random() * 6, phase: random() * 6 }));
 
       const back = createLayer(width, height);
-      const farTop = (x) => Math.round(height * .585 + Math.sin(x * .021 + 1.3) * 5 + Math.sin(x * .057 + .4) * 2.5);
-      const nearTop = (x) => Math.round(height * .655 + Math.sin(x * .013 + 2.1) * 6 + Math.sin(x * .043 + 1.7) * 2);
+      const farTop = (x) => Math.round(height * .585 + (Math.sin(x * .021 / size + 1.3) * 5 + Math.sin(x * .057 / size + .4) * 2.5) * size);
+      const nearTop = (x) => Math.round(height * .655 + (Math.sin(x * .013 / size + 2.1) * 6 + Math.sin(x * .043 / size + 1.7) * 2) * size);
 
       for (let x = 0; x < width; x += 1) {
         const top = farTop(x);
@@ -3463,14 +3792,14 @@
         fillPixels(back.ctx, x, top, 1, 1, "#d6b583");
         back.ctx.fillStyle = "#f2d6a2";
 
-        for (let y = top + 2; y < top + 16; y += 1) {
-          if (bayerAt(x, y) < .5 - (y - top) * .03) {
+        for (let y = top + 2; y < top + 16 * size; y += 1) {
+          if (bayerAt(x, y) < .5 - (y - top) * .03 / size) {
             back.ctx.fillRect(x, y, 1, 1);
           }
         }
       }
 
-      [.47, .93].forEach((at) => {
+      [.12, .52, .88].forEach((at) => {
         const x = Math.round(width * at);
         drawFarWindmill(back.ctx, x, farTop(x) + 2);
       });
@@ -3485,40 +3814,42 @@
         }
       }
 
-      const windmills = [[.3, 1], [.665, -1]].map(([at, spin]) => {
+      const millSize = size * .8;
+      const windmills = [[.37, 1], [.63, -1]].map(([at, spin]) => {
         const x = Math.round(width * at);
-        return { x, y: drawWindmillTower(back.ctx, x, nearTop(x) + 4), spin, phase: random() * 6 };
+        return { x, y: drawWindmillTower(back.ctx, x, nearTop(x) + 4, millSize), spin, phase: random() * 6 };
       });
 
       const field = createLayer(width, height);
       const fieldTop = Math.round(height * .69);
       paintGradient(field.ctx, fieldTop, width, height - fieldTop, [[0, "#f3cc6b"], [.2, "#e4ae4f"], [.55, "#ca8f3f"], [1, "#8d5a2b"]]);
 
-      for (let index = 0; index < width * 4; index += 1) {
+      for (let index = 0; index < width * 7; index += 1) {
         const depth = random();
         const x = Math.floor(random() * width);
         const y = fieldTop + Math.floor(depth * depth * (height - fieldTop));
-        fillPixels(field.ctx, x, y, 1, 1 + Math.round(depth * 5), random() < .45 ? "#fbe194" : "#a8712f");
+        fillPixels(field.ctx, x, y, 1, 1 + Math.round(depth * 5 * size), random() < .45 ? "#fbe194" : "#a8712f");
       }
 
       const fenceTop = Math.round(height * .735);
+      const postHeight = Math.round(13 * size);
       [3, 8].forEach((offset) => {
-        fillPixels(field.ctx, 0, fenceTop + offset, width, 2, "#7a4c2a");
-        fillPixels(field.ctx, 0, fenceTop + offset, width, 1, "#a36b3e");
+        fillPixels(field.ctx, 0, fenceTop + Math.round(offset * size), width, 2, "#7a4c2a");
+        fillPixels(field.ctx, 0, fenceTop + Math.round(offset * size), width, 1, "#a36b3e");
       });
 
-      for (let x = 2; x < width; x += 17) {
-        fillPixels(field.ctx, x - 1, fenceTop - 1, 4, 14, "#3d2616");
-        fillPixels(field.ctx, x, fenceTop, 2, 13, "#8b5b34");
-        fillPixels(field.ctx, x, fenceTop, 1, 13, "#ad784b");
+      for (let x = 2; x < width; x += Math.round(17 * size)) {
+        fillPixels(field.ctx, x - 1, fenceTop - 1, 4, postHeight + 1, "#3d2616");
+        fillPixels(field.ctx, x, fenceTop, 2, postHeight, "#8b5b34");
+        fillPixels(field.ctx, x, fenceTop, 1, postHeight, "#ad784b");
       }
 
-      const wheatTips = Array.from({ length: 110 }, () => {
+      const wheatTips = Array.from({ length: Math.round(width * .47) }, () => {
         const depth = random();
         return [Math.floor(random() * width), fieldTop + 3 + Math.floor(depth * depth * (height - fieldTop - 6)), random() * 6];
       });
-      const frontStalks = Array.from({ length: Math.round(width / 4) }, (_, index) => [index * 4 + Math.floor(random() * 3), 6 + Math.floor(random() * 10), random() * 6, random() < .5]);
-      const leaves = Array.from({ length: 10 }, () => ({ x: random() * width, y: random() * height, vx: 6 + random() * 10, vy: 10 + random() * 12, phase: random() * 6 }));
+      const frontStalks = Array.from({ length: Math.round(width / 4) }, (_, index) => [index * 4 + Math.floor(random() * 3), Math.round((6 + random() * 10) * size), random() * 6, random() < .5]);
+      const leaves = Array.from({ length: 16 }, () => ({ x: random() * width, y: random() * height, vx: 6 + random() * 10, vy: 10 + random() * 12, phase: random() * 6 }));
 
       return {
         base: "#24508a",
@@ -3541,7 +3872,7 @@
             ctx.fillRect(x + 2, y + wing, 1, 1);
           });
           ctx.drawImage(back.canvas, 0, 0);
-          windmills.forEach((mill) => drawWindmillSails(ctx, mill.x, mill.y, t * .8 * mill.spin + mill.phase));
+          windmills.forEach((mill) => drawWindmillSails(ctx, mill.x, mill.y, t * .8 * mill.spin + mill.phase, millSize));
           ctx.drawImage(field.canvas, 0, 0);
           ctx.fillStyle = "#ffe69a";
           wheatTips.forEach(([x, y, phase]) => ctx.fillRect(x + Math.round(Math.sin(t * 1.6 + phase)), y, 1, 2));
@@ -3583,47 +3914,51 @@
       pixelLine(ctx, x - 6, base - 9, x + 6, base - 20, "#c2a37c");
     }
 
-    function drawWindmillTower(ctx, cx, base) {
-      const towerHeight = 34;
+    function drawWindmillTower(ctx, cx, base, size = 1) {
+      const towerHeight = Math.round(34 * size);
+      const roofHeight = Math.round(8 * size);
+      const plankEvery = Math.round(6 * size);
       const top = base - towerHeight;
 
       for (let row = 0; row <= towerHeight; row += 1) {
-        const half = Math.round(3 + row * 3.5 / towerHeight);
-        const plank = row % 6 === 5;
+        const half = Math.round((3 + row * 3.5 / towerHeight) * size);
+        const plank = row % plankEvery === plankEvery - 1;
         fillPixels(ctx, cx - half - 1, top + row, half * 2 + 3, 1, "#3c281a");
         fillPixels(ctx, cx - half, top + row, half * 2 + 1, 1, plank ? "#b88550" : "#d8a96c");
         fillPixels(ctx, cx + Math.ceil(half * .35), top + row, Math.floor(half * .65) + 1, 1, plank ? "#8c6036" : "#a8773f");
       }
 
-      fillPixels(ctx, cx - 1, base - 6, 3, 6, "#3c281a");
-      fillPixels(ctx, cx - 1, top + 12, 2, 3, "#3c281a");
-      fillPixels(ctx, cx - 1, top + 12, 1, 1, "#ffd98c");
-      fillPixels(ctx, cx - 1, top - 9, 3, 1, "#3c281a");
+      const door = Math.round(6 * size);
+      const windowY = top + Math.round(12 * size);
+      fillPixels(ctx, cx - 1, base - door, 3, door, "#3c281a");
+      fillPixels(ctx, cx - 1, windowY, 2, 3, "#3c281a");
+      fillPixels(ctx, cx - 1, windowY, 1, 1, "#ffd98c");
+      fillPixels(ctx, cx - 1, top - roofHeight - 1, 3, 1, "#3c281a");
 
-      for (let row = 0; row < 8; row += 1) {
+      for (let row = 0; row < roofHeight; row += 1) {
         const half = Math.round(row * .75) + 1;
-        fillPixels(ctx, cx - half - 1, top - 8 + row, half * 2 + 3, 1, "#3c281a");
-        fillPixels(ctx, cx - half, top - 8 + row, half * 2 + 1, 1, "#b9492f");
-        fillPixels(ctx, cx + 1, top - 8 + row, half, 1, "#8a3322");
+        fillPixels(ctx, cx - half - 1, top - roofHeight + row, half * 2 + 3, 1, "#3c281a");
+        fillPixels(ctx, cx - half, top - roofHeight + row, half * 2 + 1, 1, "#b9492f");
+        fillPixels(ctx, cx + 1, top - roofHeight + row, half, 1, "#8a3322");
       }
 
-      return top - 3;
+      return top - Math.round(3 * size);
     }
 
-    function drawWindmillSails(ctx, cx, cy, angle) {
+    function drawWindmillSails(ctx, cx, cy, angle, size = 1) {
       for (let sail = 0; sail < 4; sail += 1) {
         const direction = angle + sail * Math.PI / 2;
         const dx = Math.cos(direction);
         const dy = Math.sin(direction);
 
-        for (let distance = 5; distance <= 16; distance += .5) {
-          for (let offset = 1; offset <= 3; offset += .5) {
-            const lattice = Math.round(distance) % 4 === 3 || offset === 3;
+        for (let distance = 5 * size; distance <= 16 * size; distance += .5) {
+          for (let offset = 1; offset <= 3 * size; offset += .5) {
+            const lattice = Math.round(distance / size) % 4 === 3 || offset >= 3 * size - .25;
             fillPixels(ctx, cx + dx * distance - dy * offset, cy + dy * distance + dx * offset, 1, 1, lattice ? "#c9ac7a" : "#f3e2b8");
           }
         }
 
-        pixelLine(ctx, cx, cy, cx + dx * 17, cy + dy * 17, "#4a3020");
+        pixelLine(ctx, cx, cy, cx + dx * 17 * size, cy + dy * 17 * size, "#4a3020");
       }
 
       fillPixels(ctx, cx - 1, cy - 1, 3, 3, "#3a2416");
@@ -3664,7 +3999,9 @@
     // Ashigaru Forest: dusk over the mountains, a torii gate, and a swaying bamboo grove.
     function buildAshigaruArt(width, height) {
       const random = seededRandom(2024);
-      const groundTop = Math.round(height * .74);
+      const size = height / 216;
+      // The ground line must match the ground platform the fighters stand on.
+      const groundTop = Math.round(height * (1 - ASHIGARU_LAYOUT[0][3]));
       const sky = createLayer(width, height);
       paintGradient(sky.ctx, 0, width, height, [
         [0, "#121433"], [.12, "#1c2050"], [.25, "#2f2d66"], [.36, "#4d3c78"], [.46, "#7a4778"],
@@ -3672,16 +4009,19 @@
       ]);
       const moonX = Math.round(width * .77);
       const moonY = Math.round(height * .21);
-      ditherDisc(sky.ctx, moonX, moonY, 30, "#e7c3b4", .18);
-      ditherDisc(sky.ctx, moonX, moonY, 24, "#f2dac4", .42);
-      pixelDisc(sky.ctx, moonX, moonY, 17, "#f9ecd2");
-      [[-6, -5, 3], [5, 3, 4], [-3, 8, 2], [8, -7, 2], [-10, 3, 1]].forEach(([dx, dy, radius]) => pixelDisc(sky.ctx, moonX + dx, moonY + dy, radius, "#e9d5b2"));
-      const stars = Array.from({ length: 55 }, () => [Math.floor(random() * width), Math.floor(random() * height * .45), random() * 6]);
+      const moonSize = size * .85;
+      ditherDisc(sky.ctx, moonX, moonY, Math.round(30 * moonSize), "#e7c3b4", .18);
+      ditherDisc(sky.ctx, moonX, moonY, Math.round(24 * moonSize), "#f2dac4", .42);
+      pixelDisc(sky.ctx, moonX, moonY, Math.round(17 * moonSize), "#f9ecd2");
+      [[-6, -5, 3], [5, 3, 4], [-3, 8, 2], [8, -7, 2], [-10, 3, 1]].forEach(([dx, dy, radius]) => {
+        pixelDisc(sky.ctx, moonX + Math.round(dx * moonSize), moonY + Math.round(dy * moonSize), Math.round(radius * moonSize), "#e9d5b2");
+      });
+      const stars = Array.from({ length: 110 }, () => [Math.floor(random() * width), Math.floor(random() * height * .45), random() * 6]);
 
       const back = createLayer(width, height);
 
       for (let x = 0; x < width; x += 1) {
-        const top = Math.round(height * .5 - Math.abs(Math.sin(x * .011 + .6)) * 18 - Math.abs(Math.sin(x * .029 + 1.4)) * 7);
+        const top = Math.round(height * .5 - (Math.abs(Math.sin(x * .011 / size + .6)) * 18 + Math.abs(Math.sin(x * .029 / size + 1.4)) * 7) * size);
         fillPixels(back.ctx, x, top, 1, height - top, "#4a3a72");
         fillPixels(back.ctx, x, top, 1, 1, "#6c538c");
       }
@@ -3689,7 +4029,7 @@
       ditherPixels(back.ctx, 0, Math.round(height * .47), width, Math.round(height * .1), "#9b6a8e", .22);
 
       for (let x = 0; x < width; x += 1) {
-        const top = Math.round(height * .6 - Math.abs(Math.sin(x * .016 + 2.2)) * 12 - Math.abs(Math.sin(x * .047 + .3)) * 4);
+        const top = Math.round(height * .6 - (Math.abs(Math.sin(x * .016 / size + 2.2)) * 12 + Math.abs(Math.sin(x * .047 / size + .3)) * 4) * size);
         fillPixels(back.ctx, x, top, 1, height - top, "#352b5b");
         fillPixels(back.ctx, x, top, 1, 1, "#4c3d72");
       }
@@ -3698,12 +4038,12 @@
       drawTorii(back.ctx, Math.round(width * .19), Math.round(height * .64));
       ditherPixels(back.ctx, 0, Math.round(height * .6), width, Math.round(height * .08), "#b97d8c", .2);
 
-      for (let index = 0; index < 24; index += 1) {
+      for (let index = 0; index < 44; index += 1) {
         const x = Math.floor(random() * width);
         const stalkWidth = random() < .5 ? 1 : 2;
         fillPixels(back.ctx, x, 0, stalkWidth, groundTop + 2, "#243c3c");
 
-        for (let y = Math.floor(random() * 12); y < groundTop; y += 12 + Math.floor(random() * 6)) {
+        for (let y = Math.floor(random() * 12); y < groundTop; y += Math.round((12 + random() * 6) * size)) {
           fillPixels(back.ctx, x - 1, y, stalkWidth + 2, 1, "#1b2f30");
         }
 
@@ -3714,30 +4054,31 @@
         }
       }
 
-      const fog = createLayer(width, 24);
+      const fogHeight = Math.round(24 * size);
+      const fog = createLayer(width, fogHeight);
       fog.ctx.fillStyle = "#d9a5b0";
 
       for (let x = 0; x < width; x += 1) {
-        const density = .1 + Math.max(0, Math.sin(x * .045) * .16 + Math.sin(x * .013 + 1) * .08);
+        const density = .1 + Math.max(0, Math.sin(x * .045 / size) * .16 + Math.sin(x * .013 / size + 1) * .08);
 
-        for (let y = 0; y < 24; y += 1) {
-          if (bayerAt(x, y) < density * (1 - Math.abs(y - 12) / 12)) {
+        for (let y = 0; y < fogHeight; y += 1) {
+          if (bayerAt(x, y) < density * (1 - Math.abs(y - fogHeight / 2) / (fogHeight / 2))) {
             fog.ctx.fillRect(x, y, 1, 1);
           }
         }
       }
 
-      const stalks = Array.from({ length: 8 }, (_, index) => ({
-        x: Math.round((index + .25 + random() * .5) * width / 8),
+      const stalks = Array.from({ length: 12 }, (_, index) => ({
+        x: Math.round((index + .25 + random() * .5) * width / 12),
         width: random() < .5 ? 3 : 4,
         phase: random() * 6,
-        spacing: 16 + 2 * Math.floor(random() * 3),
-        leaves: Array.from({ length: 3 }, () => [Math.floor(random() * groundTop * .65), random() < .5 ? -1 : 1])
+        spacing: Math.round((16 + 2 * Math.floor(random() * 3)) * size),
+        leaves: Array.from({ length: 4 }, () => [Math.floor(random() * groundTop * .65), random() < .5 ? -1 : 1])
       }));
-      const fireflies = Array.from({ length: 18 }, () => ({ x: random() * width, y: height * .3 + random() * height * .42, phase: random() * 6, speed: .4 + random() * .6 }));
+      const fireflies = Array.from({ length: 30 }, () => ({ x: random() * width, y: height * .3 + random() * height * .5, phase: random() * 6, speed: .4 + random() * .6 }));
       const ground = buildForestGround(width, height - groundTop + 8, random);
       const lanterns = [Math.round(width * .07), Math.round(width * .93)];
-      const fallingLeaves = Array.from({ length: 8 }, () => ({ x: random() * width, y: random() * height, vx: -4 - random() * 6, vy: 9 + random() * 8, phase: random() * 6 }));
+      const fallingLeaves = Array.from({ length: 14 }, () => ({ x: random() * width, y: random() * height, vx: -4 - random() * 6, vy: 9 + random() * 8, phase: random() * 6 }));
 
       return {
         base: "#121433",
@@ -3756,25 +4097,30 @@
           ctx.drawImage(fog.canvas, fogX - width, Math.round(height * .55));
           ctx.drawImage(fog.canvas, fogX, Math.round(height * .55));
           stalks.forEach((stalk) => drawBambooStalk(ctx, stalk, t, groundTop));
-          drawFireflies(ctx, fireflies.slice(0, 11), t);
+          drawFireflies(ctx, fireflies.slice(0, 18), t);
         },
         drawPlatforms(ctx, platforms, t) {
           platforms.forEach((platform) => {
-            if (!platform.visible) {
+            if (platform.visible) {
+              drawBambooPlatform(ctx, platform);
+            } else {
               ctx.drawImage(ground.canvas, 0, platform.y - 4);
               lanterns.forEach((x) => drawStoneLantern(ctx, x, platform.y + 1, t));
             }
           });
         },
         drawForeground(ctx, t) {
-          [3, width - 8].forEach((x, index) => drawBambooStalk(ctx, { x, width: 5, phase: index * 2, spacing: 22, leaves: [[18 + index * 9, index ? -1 : 1], [44, index ? -1 : 1]], dark: true }, t, height));
+          [3, width - 8].forEach((x, index) => {
+            const leaves = [[Math.round((18 + index * 9) * size), index ? -1 : 1], [Math.round(44 * size), index ? -1 : 1]];
+            drawBambooStalk(ctx, { x, width: 5, phase: index * 2, spacing: Math.round(22 * size), leaves, dark: true }, t, height);
+          });
           fallingLeaves.forEach((leaf) => {
             const x = Math.round(wrap(leaf.x + t * leaf.vx + Math.sin(t * 1.1 + leaf.phase) * 8, width + 10) - 5);
             const y = Math.round(wrap(leaf.y + t * leaf.vy, height + 10) - 5);
             const tilt = Math.floor(t * 3 + leaf.phase) % 2 === 0 ? 1 : -1;
             pixelLine(ctx, x, y, x + 2, y + tilt, "#78b25e");
           });
-          drawFireflies(ctx, fireflies.slice(11), t);
+          drawFireflies(ctx, fireflies.slice(18), t);
         }
       };
     }
@@ -3823,19 +4169,28 @@
     function drawBambooStalk(ctx, stalk, t, bottom) {
       const body = stalk.dark ? ["#0b1714", "#0f211c", "#173026", "#08110f"] : ["#132620", "#2d5945", "#4f8b60", "#1f4233"];
       const nodeLight = stalk.dark ? "#22423a" : "#6aa877";
-      const swayAt = (y) => Math.round(Math.sin(t * .7 + stalk.phase) * (1 - y / bottom) * 2.5);
+      const sway = Math.sin(t * .7 + stalk.phase) * 2.5;
+      const swayAt = (y) => Math.round(sway * (1 - y / bottom));
+      const segments = [];
 
-      for (let y = 0; y < bottom + 2; y += 2) {
+      for (let y = 0; y < bottom + 2; y += 4) {
+        segments.push([y, stalk.x + swayAt(y)]);
+      }
+
+      // One pass per colour keeps canvas state changes low on these tall stalks.
+      ctx.fillStyle = body[0];
+      segments.forEach(([y, x]) => ctx.fillRect(x - 1, y, stalk.width + 2, 4));
+      ctx.fillStyle = body[1];
+      segments.forEach(([y, x]) => ctx.fillRect(x, y, stalk.width, 4));
+      ctx.fillStyle = body[2];
+      segments.forEach(([y, x]) => ctx.fillRect(x, y, 1, 4));
+      ctx.fillStyle = body[3];
+      segments.forEach(([y, x]) => ctx.fillRect(x + stalk.width - 1, y, 1, 4));
+
+      for (let y = stalk.spacing; y < bottom; y += stalk.spacing) {
         const x = stalk.x + swayAt(y);
-        fillPixels(ctx, x - 1, y, stalk.width + 2, 2, body[0]);
-        fillPixels(ctx, x, y, stalk.width, 2, body[1]);
-        fillPixels(ctx, x, y, 1, 2, body[2]);
-        fillPixels(ctx, x + stalk.width - 1, y, 1, 2, body[3]);
-
-        if (y % stalk.spacing < 2) {
-          fillPixels(ctx, x - 1, y, stalk.width + 2, 1, nodeLight);
-          fillPixels(ctx, x - 1, y + 1, stalk.width + 2, 1, body[0]);
-        }
+        fillPixels(ctx, x - 1, y, stalk.width + 2, 1, nodeLight);
+        fillPixels(ctx, x - 1, y + 1, stalk.width + 2, 1, body[0]);
       }
 
       stalk.leaves.forEach(([leafY, side]) => {
@@ -3844,6 +4199,36 @@
         pixelLine(ctx, x, leafY, x + side * 7, leafY + 3 + flutter, stalk.dark ? "#1d3a2c" : "#3f7a4f");
         pixelLine(ctx, x, leafY + 1, x + side * 6, leafY + 4 + flutter, stalk.dark ? "#132a20" : "#2b5a3b");
       });
+    }
+
+    // Raised forest platforms: two lashed bamboo poles with rope ties and a few hanging leaves.
+    function drawBambooPlatform(ctx, platform) {
+      const { x, y, w, h } = platform;
+      const pole = Math.max(3, Math.floor(h / 2));
+      fillPixels(ctx, x - 1, y - 1, w + 2, h + 2, "#1d1408");
+      fillPixels(ctx, x, y, w, h, "#b59a52");
+      fillPixels(ctx, x, y, w, 1, "#e8d68e");
+      fillPixels(ctx, x, y + pole, w, 1, "#5e4a22");
+      fillPixels(ctx, x, y + pole + 1, w, 1, "#d2bd72");
+      fillPixels(ctx, x, y + h - 1, w, 1, "#7d6430");
+      ctx.fillStyle = "#6e5726";
+
+      for (let node = x + 5 + (x % 3); node < x + w - 2; node += 9) {
+        ctx.fillRect(node, y + 1, 1, h - 2);
+      }
+
+      ctx.fillStyle = "#3e2a18";
+
+      for (let tie = x + 2; tie < x + w - 2; tie += 14) {
+        ctx.fillRect(tie, y - 1, 2, h + 2);
+      }
+
+      ctx.fillStyle = "#4f8a4a";
+
+      for (let leaf = x + 7 + (x % 5); leaf < x + w - 4; leaf += 17) {
+        ctx.fillRect(leaf, y + h + 1, 1, 2 + (leaf % 3));
+        ctx.fillRect(leaf + 1, y + h + 2, 1, 2);
+      }
     }
 
     function drawStoneLantern(ctx, x, groundY, t) {
@@ -3884,20 +4269,21 @@
     // Neo York: a ringed planet over a rainy neon skyline, with hovering platforms.
     function buildNeoArt(width, height) {
       const random = seededRandom(77);
+      const size = height / 216;
       const sky = createLayer(width, height);
       paintGradient(sky.ctx, 0, width, height, [
         [0, "#04041a"], [.16, "#0a0a2e"], [.31, "#15134c"], [.44, "#261662"], [.54, "#3f1b72"],
         [.62, "#61207a"], [.69, "#8a2a80"], [.76, "#b43682"], [1, "#b43682"]
       ]);
-      const stars = Array.from({ length: 40 }, () => [Math.floor(random() * width), Math.floor(random() * height * .4), random() * 6]);
-      drawRingedPlanet(sky.ctx, Math.round(width * .7), Math.round(height * .25));
+      const stars = Array.from({ length: 80 }, () => [Math.floor(random() * width), Math.floor(random() * height * .4), random() * 6]);
+      drawRingedPlanet(sky.ctx, Math.round(width * .7), Math.round(height * .25), size * .85);
 
       const back = createLayer(width, height);
       const backBase = Math.round(height * .82);
 
       for (let x = -3; x < width;) {
-        const buildingWidth = 8 + Math.floor(random() * 15);
-        const buildingHeight = 26 + Math.floor(random() * 56);
+        const buildingWidth = Math.round((8 + random() * 15) * size * .8);
+        const buildingHeight = Math.round((26 + random() * 56) * size);
         fillPixels(back.ctx, x, backBase - buildingHeight, buildingWidth, height - backBase + buildingHeight, "#17143d");
         back.ctx.fillStyle = "#2c2a6a";
 
@@ -3918,8 +4304,8 @@
       const signs = [];
 
       for (let x = -4; x < width;) {
-        const buildingWidth = 14 + Math.floor(random() * 18);
-        const buildingHeight = 54 + Math.floor(random() * 76);
+        const buildingWidth = Math.round((14 + random() * 18) * size * .8);
+        const buildingHeight = Math.round((54 + random() * 76) * size);
         const top = midBase - buildingHeight;
         fillPixels(mid.ctx, x, top, buildingWidth, height - top, "#1f1849");
         fillPixels(mid.ctx, x, top, 1, buildingHeight, "#2f2868");
@@ -3932,16 +4318,17 @@
           }
         }
 
-        if (buildingHeight > 100) {
+        if (buildingHeight > 100 * size) {
           const antennaX = x + Math.floor(buildingWidth / 2);
-          fillPixels(mid.ctx, antennaX, top - 8, 1, 8, "#2f2868");
-          antennas.push([antennaX, top - 9, random() * 6]);
+          const antennaHeight = Math.round(8 * size);
+          fillPixels(mid.ctx, antennaX, top - antennaHeight, 1, antennaHeight, "#2f2868");
+          antennas.push([antennaX, top - antennaHeight - 1, random() * 6]);
         }
 
         if (random() < .45) {
           signs.push({
             x: x + 2 + Math.floor(random() * Math.max(1, buildingWidth - 14)),
-            y: top + 8 + Math.floor(random() * 30),
+            y: top + Math.round((8 + random() * 30) * size),
             w: 10,
             h: 6,
             color: ["#ff4fd8", "#53f0ff", "#b6ff5a", "#ffb347"][Math.floor(random() * 4)],
@@ -3958,9 +4345,9 @@
         { y: Math.round(height * .5), speed: 46, dir: -1 },
         { y: Math.round(height * .36), speed: 24, dir: -1 }
       ];
-      const cars = lanes.flatMap((lane) => [0, .5].map((offset) => ({ ...lane, offset: offset * (width + 40) + random() * 30 })));
+      const cars = lanes.flatMap((lane) => [0, .34, .67].map((offset) => ({ ...lane, offset: offset * (width + 40) + random() * 30 })));
       const streets = [[Math.round(height * .91), "#ff3fbf", 80], [Math.round(height * .96), "#3fe6ff", -60]];
-      const rain = Array.from({ length: 120 }, () => ({ x: random() * width, y: random() * height, speed: 150 + random() * 70, front: random() < .2 }));
+      const rain = Array.from({ length: 260 }, () => ({ x: random() * width, y: random() * height, speed: 150 + random() * 70, front: random() < .2 }));
 
       return {
         base: "#04041a",
@@ -4013,19 +4400,20 @@
       };
     }
 
-    function drawRingedPlanet(ctx, cx, cy) {
-      const radius = 24;
-      ditherDisc(ctx, cx, cy, 36, "#2fc4f0", .1);
-      ditherDisc(ctx, cx, cy, 30, "#43d3f5", .24);
-      drawPlanetRing(ctx, cx, cy, true);
+    function drawRingedPlanet(ctx, cx, cy, size = 1) {
+      const radius = Math.round(24 * size);
+      const band = Math.round(8 * size);
+      ditherDisc(ctx, cx, cy, Math.round(36 * size), "#2fc4f0", .1);
+      ditherDisc(ctx, cx, cy, Math.round(30 * size), "#43d3f5", .24);
+      drawPlanetRing(ctx, cx, cy, true, size);
       pixelDisc(ctx, cx, cy, radius, "#47c0da");
       ctx.fillStyle = "#3399b8";
       forEachDiscRow(cx, cy, radius, (y, left, right) => {
-        if (wrap(y - cy + 30, 8) < 2) {
+        if (wrap(y - cy + radius, band) < Math.max(2, Math.round(2 * size))) {
           ctx.fillRect(left, y, right - left + 1, 1);
         }
       });
-      ditherDisc(ctx, cx - 7, cy - 7, 11, "#9af2ff", .4);
+      ditherDisc(ctx, cx - Math.round(7 * size), cy - Math.round(7 * size), Math.round(11 * size), "#9af2ff", .4);
       ctx.fillStyle = "#1f6a8c";
       forEachDiscRow(cx, cy, radius, (y, left, right) => {
         for (let x = left; x <= right; x += 1) {
@@ -4034,16 +4422,16 @@
           }
         }
       });
-      drawPlanetRing(ctx, cx, cy, false);
+      drawPlanetRing(ctx, cx, cy, false, size);
     }
 
-    function drawPlanetRing(ctx, cx, cy, backHalf) {
-      for (let step = 0; step < 360; step += 1) {
-        const angle = step * Math.PI / 180;
+    function drawPlanetRing(ctx, cx, cy, backHalf, size = 1) {
+      for (let step = 0; step < 720; step += 1) {
+        const angle = step * Math.PI / 360;
         const isBack = Math.sin(angle) < 0;
 
         if (isBack === backHalf) {
-          fillPixels(ctx, cx + Math.cos(angle) * 42, cy + Math.sin(angle) * 8 - Math.cos(angle) * 6, 1, 1, isBack ? "#5fb6cc" : "#c6f8ff");
+          fillPixels(ctx, cx + Math.cos(angle) * 42 * size, cy + (Math.sin(angle) * 8 - Math.cos(angle) * 6) * size, 1, 1, isBack ? "#5fb6cc" : "#c6f8ff");
         }
       }
     }
@@ -4115,13 +4503,13 @@
       neo: buildNeoArt
     };
 
-    // Fighters on the canvas: pose selection, shadows, trails, and the thrust streak.
-    function fighterSprite(index, pose, frame, scarfPhase, variant = "") {
-      const key = `${index}|${pose}|${frame}|${scarfPhase}|${variant}`;
+    // Fighters on the canvas: pose selection, shadows, trails, and the attack streak.
+    function fighterSprite(index, pose, frame, scarfPhase, armed, variant = "") {
+      const key = `${index}|${pose}|${frame}|${scarfPhase}|${armed ? "sword" : "fists"}|${variant}`;
       let sprite = scene.sprites.get(key);
 
       if (!sprite) {
-        const { buffer, swordTip } = renderFighterSprite(index, pose, frame, scarfPhase, SWORD_LENGTH);
+        const { buffer, tip } = renderFighterSprite(index, pose, frame, scarfPhase, armed);
 
         if (variant) {
           const color = variant === "flash" ? hexToPixel("#ffffff") : hexToPixel(FIGHTER_PALETTES[index].ghost);
@@ -4135,7 +4523,7 @@
 
         const layer = createLayer(SPRITE_W, SPRITE_H);
         layer.ctx.putImageData(buffer.image, 0, 0);
-        sprite = { canvas: layer.canvas, tip: swordTip };
+        sprite = { canvas: layer.canvas, tip };
         scene.sprites.set(key, sprite);
       }
 
@@ -4149,6 +4537,11 @@
       ctx.scale(facing, 1);
       ctx.drawImage(canvas, -SPRITE_ORIGIN_X, y - SPRITE_ORIGIN_Y);
       ctx.restore();
+    }
+
+    // A swing keeps the weapon it started with, even if a sword is grabbed mid-punch.
+    function fighterIsArmed(player) {
+      return (player.isAttacking ? player.attackWeapon : player.weapon) === "sword";
     }
 
     function fighterPose(player, fx, now) {
@@ -4165,8 +4558,9 @@
       }
 
       if (player.isAttacking) {
+        const attack = attackProfile(player);
         const elapsed = now - fx.attackStart;
-        return ["attack", elapsed < ATTACK_ACTIVE_START ? 0 : elapsed < ATTACK_ACTIVE_END ? 1 : 2];
+        return ["attack", elapsed < attack.activeStart ? 0 : elapsed < attack.activeEnd ? 1 : 2];
       }
 
       if (!player.grounded) {
@@ -4213,6 +4607,10 @@
       });
     }
 
+    function spawnSparkle(x, y, count) {
+      spawnParticles({ x, y, count, colors: ["#fff3c4", "#ffcf5a", "#ffffff"], speed: [20, 75], angle: -Math.PI / 2, spread: Math.PI * 2, gravity: 50, life: [.3, .65], size: "mixed" });
+    }
+
     // Effects start from changes in each fighter's state, so a multiplayer guest that only
     // receives snapshots gets the same sparks, dust, and screen shake as the host.
     function trackFighterEffects(player, index, now, point, art) {
@@ -4230,9 +4628,10 @@
         if (player.hp < fx.hp) {
           const attacker = players[1 - index];
           const away = player.x >= attacker.x ? 1 : -1;
+          const heavy = attacker.attackWeapon === "sword";
           fx.hitStart = now;
-          spawnParticles({ x: point.x - away * 3, y: point.y - 25, count: 14, colors: ["#ffffff", "#fff2a8", "#ffbe4a", "#ff7b3a"], speed: [50, 140], angle: away > 0 ? -.35 : Math.PI + .35, spread: 1.7, gravity: 260, life: [.18, .42] });
-          scene.shake = Math.max(scene.shake, 3);
+          spawnParticles({ x: point.x - away * 3, y: point.y - 25, count: heavy ? 14 : 7, colors: ["#ffffff", "#fff2a8", "#ffbe4a", "#ff7b3a"], speed: heavy ? [50, 140] : [35, 90], angle: away > 0 ? -.35 : Math.PI + .35, spread: 1.7, gravity: 260, life: [.18, .42] });
+          scene.shake = Math.max(scene.shake, heavy ? 3 : 1.5);
         }
 
         if (player.isDead && !fx.isDead) {
@@ -4252,6 +4651,10 @@
             spawnParticles({ x: point.x, y: point.y - 2, count: 1, colors: [spoke % 2 ? "#ffffff" : FIGHTER_PALETTES[index].scarf], speed: [42, 46], angle: spoke / 10 * Math.PI * 2, spread: 0, life: [.18, .22] });
           }
         }
+
+        if (player.weapon === "sword" && fx.weapon !== "sword") {
+          spawnSparkle(point.x, point.y - 22, 18);
+        }
       }
 
       Object.assign(fx, {
@@ -4261,7 +4664,8 @@
         isAttacking: player.isAttacking,
         isDashing: player.isDashing,
         grounded: player.grounded,
-        airJumpsUsed: player.airJumpsUsed
+        airJumpsUsed: player.airJumpsUsed,
+        weapon: player.weapon
       });
     }
 
@@ -4286,15 +4690,16 @@
       ctx.fillRect(point.x - half + 2, support.y + 1, Math.max(1, half * 2 - 3), 1);
     }
 
-    function drawThrustStreak(ctx, player, point, sprite, facing, elapsed, frame, scale) {
+    // A streak from the sword point or fist out to the attack's real reach, so the hit range is visible.
+    function drawAttackStreak(ctx, player, point, sprite, facing, elapsed, frame, scale) {
       if (!sprite.tip) {
         return;
       }
 
-      const attackerWidth = player.el.offsetWidth || frame.width * .06;
-      const reach = clamp(frame.width * .14, 105, 180);
+      const attack = attackProfile(player);
+      const attackerWidth = player.el.offsetWidth || frame.width * FIGHTER_WIDTH_FRACTION;
       const origin = player.x + (facing === 1 ? attackerWidth * .82 : attackerWidth * .18);
-      const endX = Math.round((origin + facing * reach) * scale.sx);
+      const endX = Math.round((origin + facing * attackerWidth * attack.reach) * scale.sx);
       const tipX = point.x + facing * (sprite.tip[0] - SPRITE_ORIGIN_X);
       const tipY = point.y + sprite.tip[1] - SPRITE_ORIGIN_Y;
       const left = Math.min(tipX, endX);
@@ -4304,7 +4709,7 @@
         return;
       }
 
-      const progress = clamp((elapsed - ATTACK_ACTIVE_START) / (ATTACK_ACTIVE_END - ATTACK_ACTIVE_START), 0, 1);
+      const progress = clamp((elapsed - attack.activeStart) / (attack.activeEnd - attack.activeStart), 0, 1);
       ctx.globalAlpha = 1 - progress * .75;
       fillPixels(ctx, left, tipY, length, 1, "#fffbe8");
       ctx.fillStyle = "#ffd88a";
@@ -4323,23 +4728,24 @@
       const [pose, poseFrame] = fighterPose(player, fx, now);
       const scarfPhase = Math.floor(now / 130) % 4;
       const facing = player.facing < 0 ? -1 : 1;
-      const sprite = fighterSprite(index, pose, poseFrame, scarfPhase, now - fx.hitStart < 70 ? "flash" : "");
+      const armed = fighterIsArmed(player);
+      const sprite = fighterSprite(index, pose, poseFrame, scarfPhase, armed, now - fx.hitStart < 70 ? "flash" : "");
 
       if (player.isDashing && now - fx.lastAfterimageAt > 28) {
         fx.lastAfterimageAt = now;
-        scene.afterimages.push({ canvas: fighterSprite(index, pose, poseFrame, scarfPhase, "ghost").canvas, x: point.x, y: point.y, facing, life: .2, maxLife: .2 });
+        scene.afterimages.push({ canvas: fighterSprite(index, pose, poseFrame, scarfPhase, armed, "ghost").canvas, x: point.x, y: point.y, facing, life: .2, maxLife: .2 });
       }
 
       drawSpriteAt(ctx, sprite.canvas, point.x, point.y, facing);
 
       if (pose === "attack" && poseFrame === 1) {
-        drawThrustStreak(ctx, player, point, sprite, facing, now - fx.attackStart, frame, scale);
+        drawAttackStreak(ctx, player, point, sprite, facing, now - fx.attackStart, frame, scale);
       }
     }
 
     function drawFighters(ctx, now, frame, scale, platforms, art) {
       const points = players.map((player) => {
-        const width = player.el.offsetWidth || frame.width * .06;
+        const width = player.el.offsetWidth || frame.width * FIGHTER_WIDTH_FRACTION;
         return { x: Math.round((player.x + width / 2) * scale.sx), y: Math.round((frame.height - player.y) * scale.sy) };
       });
 
@@ -4350,6 +4756,126 @@
       [0, 1]
         .sort((a, b) => Number(players[a].isAttacking) - Number(players[b].isAttacking))
         .forEach((index) => drawFighter(ctx, players[index], index, points[index], now, frame, scale));
+    }
+
+    // Weapon platforms: a rune-carved pedestal with a floating sword. A beam of light marks a new
+    // one, and it blinks before crumbling once its sword has been taken.
+    function weaponSwordSprite() {
+      if (!scene.pickupSword) {
+        const buffer = createPixelBuffer(9, 30);
+        drawSword(buffer, { outline: "#120c16", guard: "#ffcf5a" }, [4, 4], 90, 23);
+        const layer = createLayer(9, 30);
+        layer.ctx.putImageData(buffer.image, 0, 0);
+        scene.pickupSword = layer.canvas;
+      }
+
+      return scene.pickupSword;
+    }
+
+    function drawWeaponPlatforms(ctx, platforms, now, t) {
+      // Forget platforms that are gone, so a reused id (after a host reload) still gets its burst.
+      scene.seenWeapons.forEach((id) => {
+        if (!platforms.some((platform) => platform.weapon.id === id)) {
+          scene.seenWeapons.delete(id);
+        }
+      });
+
+      platforms.forEach((platform) => {
+        const { weapon, x, y, w, h } = platform;
+        const age = now - weapon.spawnedAt;
+        const center = Math.round(x + w / 2);
+
+        if (!scene.seenWeapons.has(weapon.id)) {
+          scene.seenWeapons.add(weapon.id);
+
+          if (age < 1000) {
+            spawnSparkle(center, y - 8, 22);
+          }
+        }
+
+        if (weapon.takenAt && now - weapon.takenAt > WEAPON_PLATFORM_LINGER - 1000 && Math.floor(now / 80) % 2 === 0) {
+          return;
+        }
+
+        if (age < 450) {
+          ctx.globalAlpha = (1 - age / 450) * .8;
+          ditherPixels(ctx, center - 3, 0, 7, y, "#fff3c4", .35);
+          fillPixels(ctx, center - 1, 0, 3, y, "#fff8dc");
+          ctx.globalAlpha = 1;
+        }
+
+        ditherPixels(ctx, x + 2, y + h + 1, w - 4, 2, "#ffcf5a", .3);
+        fillPixels(ctx, x - 1, y - 1, w + 2, h + 2, "#120c16");
+        fillPixels(ctx, x, y, w, h, "#3a3150");
+        fillPixels(ctx, x, y + h - 2, w, 2, "#241d36");
+        fillPixels(ctx, x, y, w, 2, "#ffcf5a");
+        fillPixels(ctx, x, y, w, 1, "#fff3c4");
+
+        for (let rune = x + 3; rune < x + w - 3; rune += 5) {
+          const lit = Math.floor(t * 4 + rune / 5) % 4 === 0;
+          fillPixels(ctx, rune, y + Math.floor(h / 2), 2, 1, lit ? "#9ff6ff" : "#6a5c9a");
+        }
+
+        if (!weapon.takenAt) {
+          const sword = weaponSwordSprite();
+          const bob = Math.round(Math.sin(t * 3 + weapon.id) * 1.5);
+          const swordTop = y - sword.height - 3 + bob;
+          ditherDisc(ctx, center, swordTop + Math.round(sword.height / 2), 9, "#ffd76a", .16 + Math.sin(t * 4) * .06);
+          ctx.drawImage(sword, center - 4, swordTop);
+
+          if (Math.floor(t * 8 + weapon.id) % 6 === 0) {
+            fillPixels(ctx, center - 6 + ((weapon.id * 5 + Math.floor(t * 8)) % 13), swordTop + ((Math.floor(t * 8) * 7) % sword.height), 1, 1, "#ffffff");
+          }
+        }
+      });
+    }
+
+    // Tiny pixel key caps: "E", and a return arrow for Player 2's Enter key in local play.
+    const KEY_GLYPHS = {
+      E: ["###", "#..", "##.", "#..", "###"],
+      enter: ["...#", "...#", ".#.#", "####", ".#.."]
+    };
+
+    function drawKeyPrompt(ctx, cx, bottom, glyphName, t) {
+      const glyph = KEY_GLYPHS[glyphName];
+      const capWidth = glyph[0].length + 6;
+      const capHeight = 11;
+      const x = Math.round(cx - capWidth / 2);
+      const y = Math.round(bottom - capHeight + Math.sin(t * 5) * 1.2);
+      fillPixels(ctx, x - 1, y - 1, capWidth + 2, capHeight + 2, "#120c16");
+      fillPixels(ctx, x, y, capWidth, capHeight, "#e3ebf7");
+      fillPixels(ctx, x, y + capHeight - 2, capWidth, 2, "#8ea3bd");
+      ctx.fillStyle = "#120c16";
+      glyph.forEach((row, glyphY) => {
+        [...row].forEach((cell, glyphX) => {
+          if (cell === "#") {
+            ctx.fillRect(x + 3 + glyphX, y + 2 + glyphY, 1, 1);
+          }
+        });
+      });
+    }
+
+    // Shows the pickup key over a sword whenever a fighter on this screen is close enough to grab it.
+    function drawPickupPrompts(ctx, rects, platforms, t) {
+      const online = multiplayerMatchActive();
+      const candidates = online ? [multiplayer.localPlayerIndex] : [0, 1];
+      const prompts = candidates
+        .filter((index) => !players[index].isDead && players[index].weapon !== "sword")
+        .map((index) => ({ index, target: nearbyWeaponPlatform(players[index], rects) }))
+        .filter((prompt) => prompt.target);
+
+      prompts.forEach(({ index, target }) => {
+        const platform = platforms.find((candidate) => candidate.weapon === target.weapon);
+
+        if (!platform) {
+          return;
+        }
+
+        const shared = prompts.filter((prompt) => prompt.target === target).length > 1;
+        const offset = shared ? (index === 0 ? -7 : 7) : 0;
+        // Above head height, so the prompt stays readable while a fighter stands on the platform.
+        drawKeyPrompt(ctx, platform.x + platform.w / 2 + offset, platform.y - 46, online || index === 0 ? "E" : "enter", t);
+      });
     }
 
     function updateSceneEffects(dt) {
@@ -4376,6 +4902,7 @@
     function scenePlatforms(platforms, frame, scale) {
       return platforms.map((platform) => ({
         id: platform.id,
+        weapon: platform.weapon,
         visible: platform.render !== false,
         x: Math.round(platform.left * scale.sx),
         y: Math.round((frame.height - platform.y) * scale.sy),
@@ -4417,6 +4944,7 @@
       const dt = Math.min(.05, Math.max(0, (now - scene.lastTime) / 1000));
       const t = now / 1000;
       const shake = REDUCE_MOTION ? 0 : Math.ceil(scene.shake);
+      const playing = !gameFrame.classList.contains("ui-mode");
       scene.lastTime = now;
       updateSceneEffects(dt);
       ctx.imageSmoothingEnabled = false;
@@ -4424,15 +4952,24 @@
       ctx.fillStyle = art.base;
       ctx.fillRect(-8, -8, width + 16, SCENE_HEIGHT + 16);
       art.drawBackground(ctx, t);
+      let rects = [];
+      let platforms = [];
 
-      if (!gameFrame.classList.contains("ui-mode")) {
-        const platforms = scenePlatforms(mapPlatformRects(now), frame, scale);
-        art.drawPlatforms(ctx, platforms, t);
+      if (playing) {
+        rects = mapPlatformRects(now);
+        platforms = scenePlatforms(rects, frame, scale);
+        art.drawPlatforms(ctx, platforms.filter((platform) => !platform.weapon), t);
+        drawWeaponPlatforms(ctx, platforms.filter((platform) => platform.weapon), now, t);
         drawFighters(ctx, now, frame, scale, platforms, art);
         drawParticles(ctx);
       }
 
       art.drawForeground(ctx, t);
+
+      if (playing) {
+        drawPickupPrompts(ctx, rects, platforms, t);
+      }
+
       ctx.setTransform(1, 0, 0, 1, 0, 0);
 
       if (scene.flash > 0 && !REDUCE_MOTION) {
@@ -4442,21 +4979,22 @@
       }
     }
 
-    // Map-select previews are rendered with the same art, with both fighters in place.
+    // Map-select previews are rendered with the same art, with both fighters at their spawns.
     function renderMapPreview(mapId) {
-      const width = 384;
+      const width = Math.round(SCENE_HEIGHT * 16 / 9);
       const frame = { width, height: SCENE_HEIGHT };
       const layer = createLayer(width, SCENE_HEIGHT);
       const art = SCENE_ART[mapId](width, SCENE_HEIGHT);
       const rects = maps[mapId].platforms(4000, frame).map((platform) => ({ ...platform, right: platform.left + platform.width }));
       const platforms = scenePlatforms(rects, frame, { sx: 1, sy: 1 });
+      const halfFighter = FIGHTER_WIDTH_FRACTION / 2;
       const spawns = maps[mapId].spawnMode === "lower-pair"
         ? [...rects].sort((a, b) => a.y - b.y).slice(0, 2).sort((a, b) => a.left - b.left).map((rect) => [rect.left + rect.width / 2, rect.y])
-        : [.36, .64].map((at) => [width * at, (rects.find((rect) => rect.id === maps[mapId].spawnPlatformId) || rects[0]).y]);
+        : players.map((player) => [width * (player.start + halfFighter), (rects.find((rect) => rect.id === maps[mapId].spawnPlatformId) || rects[0]).y]);
       art.drawBackground(layer.ctx, 4);
       art.drawPlatforms(layer.ctx, platforms, 4);
       spawns.forEach(([x, y], index) => {
-        drawSpriteAt(layer.ctx, fighterSprite(index, "idle", 0, 0).canvas, Math.round(x), Math.round(SCENE_HEIGHT - y), index === 0 ? 1 : -1);
+        drawSpriteAt(layer.ctx, fighterSprite(index, "idle", 0, 0, false).canvas, Math.round(x), Math.round(SCENE_HEIGHT - y), index === 0 ? 1 : -1);
       });
       art.drawForeground(layer.ctx, 4);
       return layer.canvas.toDataURL();
