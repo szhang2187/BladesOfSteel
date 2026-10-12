@@ -76,6 +76,14 @@ Multiplayer works between any two devices with a browser and an internet connect
 
 The match uses the direct link while it is working and switches to the relay automatically if the direct link fails or never connects.
 
+How a match stays smooth:
+
+- **Your own fighter moves instantly.** Each player simulates their own fighter's movement, jumps, and dashes on their own screen and sends its position 20 to 30 times a second. The host still decides everything that matters for the score: hits, damage, deaths, swords, and rounds.
+- **Your opponent moves smoothly.** Their updates are buffered and drawn a little in the past (usually 60 to 220 ms, adapting to the connection), blending between updates so they move at full frame rate. If updates stall, the game pauses the opponent briefly, then replays the backlog and quietly catches up instead of jumping.
+- **Hits are judged by what the guest saw.** When the guest swings, the host checks the swing against where its own fighter appeared on the guest's screen at that moment (lag compensation).
+- **Fast lane for positions.** On the direct link, position updates use a separate data channel that never waits for lost packets, so one dropped packet doesn't hold up the rest. On the relay, each update goes to two brokers and the first copy to arrive wins.
+- **Moving platforms line up.** Both screens run Neo York's platforms on the host's clock, so they're in the same place for both players.
+
 To play multiplayer:
 
 1. Both players choose Multiplayer Mode and enter a name.
@@ -85,6 +93,7 @@ To play multiplayer:
 
 Troubleshooting:
 
+- Both players need the same version of the page. After an update, refresh (Ctrl+Shift+R) on every device; different versions can't see each other's lobbies.
 - Open the browser console (F12). It shows `Multiplayer: using direct peer-to-peer link` or `Multiplayer: using relay servers`.
 - Add `?net=relay` or `?net=direct` to the page URL to test one path at a time. Both players must use the same setting.
 - To let more players use the direct link, add TURN servers to `MULTIPLAYER_TURN_SERVERS` in `index.html`, for example from a free Metered or ExpressTURN account.

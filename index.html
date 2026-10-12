@@ -1013,7 +1013,19 @@
     const DASH_DURATION = 220;
     const DASH_COOLDOWN = 850;
     const MATCH_FOUND_DELAY = 2000;
+    // Online sync: send rates, how far in the past the opponent is drawn, and lag compensation.
     const MULTIPLAYER_STATE_INTERVAL = 50;
+    const MULTIPLAYER_DIRECT_STATE_INTERVAL = 33;
+    const MULTIPLAYER_POSE_KEEPALIVE = 250;
+    const MULTIPLAYER_INTERP_MIN = 60;
+    const MULTIPLAYER_INTERP_MAX = 220;
+    const MULTIPLAYER_EXTRAPOLATE_LIMIT = 70;
+    const MULTIPLAYER_STALL_BUFFER_MAX = 400;
+    const MULTIPLAYER_STALL_CATCH_UP = .2;
+    const MULTIPLAYER_POSE_BUFFER = 1000;
+    const MULTIPLAYER_LAG_COMPENSATION_MAX = 300;
+    const MULTIPLAYER_REMOTE_COOLDOWN_SLACK = 100;
+    const MULTIPLAYER_FAST_CHANNEL_ID = 9;
 
     // Multiplayer networking settings. Every lobby has two paths between players:
     // - Relay: public MQTT brokers over secure WebSockets. Works on any network that can
@@ -1021,8 +1033,8 @@
     // - Direct: a WebRTC link set up by Trystero. Lower latency, but some networks block it.
     // Match traffic uses the direct link while it is healthy and falls back to the relay.
     // Bump these when the snapshot format changes so old and new pages never share a lobby.
-    const MULTIPLAYER_APP_ID = "blades-of-steel-szhang2187-v6";
-    const MULTIPLAYER_ROOM_PREFIX = "code-lobby-v4";
+    const MULTIPLAYER_APP_ID = "blades-of-steel-szhang2187-v7";
+    const MULTIPLAYER_ROOM_PREFIX = "code-lobby-v5";
     const MULTIPLAYER_MAP_ID = "weizen";
     // Library versions are pinned: unpinned imports silently pulled in breaking API changes.
     const TRYSTERO_MODULE_URL = "https://cdn.jsdelivr.net/npm/@trystero-p2p/nostr@0.26.0/+esm";
@@ -1238,7 +1250,9 @@
     }
 
     function uiBlocksGameInput() {
-      return menuOpen || settingsOpen || helpOpen || nameOpen || multiplayerChoiceOpen || lobbyOpen || joinOpen || matchmakingOpen || mapSelectOpen || gameOver || roundResetTimer;
+      // A guest also pauses while the host is between rounds.
+      const hostPaused = multiplayerMatchActive() && !multiplayer.isHost && multiplayer.remotePaused;
+      return menuOpen || settingsOpen || helpOpen || nameOpen || multiplayerChoiceOpen || lobbyOpen || joinOpen || matchmakingOpen || mapSelectOpen || gameOver || roundResetTimer || hostPaused;
     }
 
     function clearMultiplayerInputs() {
@@ -1805,10 +1819,17 @@
         return false;
       }
 
-      const target = nearbyWeaponPlatform(player, weaponPlatformRects(frameSize()));
+      // For a guest's request the host checks where the guest was standing on its own screen.
+      const view = multiplayerMatchActive() && multiplayer.isHost && playerIndex === multiplayer.remotePlayerIndex ? player.attackView : null;
+      const target = nearbyWeaponPlatform(view ? { ...player, x: view.x, y: view.y } : player, weaponPlatformRects(frameSize()));
 
       if (!target) {
         return false;
+      }
+
+      // A guest only predicts the pickup (so it doesn't swing); the host decides and reports back.
+      if (multiplayerMatchActive() && !multiplayer.isHost) {
+        return true;
       }
 
       target.weapon.takenAt = now;
@@ -2027,11 +2048,25 @@
     }
 
     function tryAttackHit(attackerIndex) {
-      const attacker = players[attackerIndex];
       const defenderIndex = attackerIndex === 0 ? 1 : 0;
-      const defender = players[defenderIndex];
+      let attacker = players[attackerIndex];
+      let defender = players[defenderIndex];
 
-      if (!attacker || !defender || defender.hp <= 0 || !attackHitLands(attacker, defender)) {
+      if (!attacker || !defender || defender.hp <= 0) {
+        return false;
+      }
+
+      // Lag compensation: the host judges a guest's swing from where the guest stood and where
+      // the guest's screen showed the host's fighter at that moment.
+      const view = multiplayerMatchActive() && multiplayer.isHost && attackerIndex === multiplayer.remotePlayerIndex ? attacker.attackView : null;
+
+      if (view) {
+        const seen = hostPositionAt(performance.now() - view.lag);
+        attacker = { ...attacker, x: view.x, y: view.y, facing: view.facing };
+        defender = seen ? { ...defender, x: seen.x, y: seen.y } : defender;
+      }
+
+      if (!attackHitLands(attacker, defender)) {
         return false;
       }
 
@@ -2044,16 +2079,19 @@
       const now = performance.now();
 
       if (!player || player.isDead || gameOver || roundResetTimer || player.isDashing) {
-        return;
+        return false;
       }
 
       // The attack key doubles as "pick up" when an unarmed fighter is at a sword.
       if (tryPickUpWeapon(playerIndex, now)) {
-        return;
+        return true;
       }
 
-      if (player.isAttacking || now < player.attackReadyAt) {
-        return;
+      // Network jitter can bunch a guest's swings together, so the host allows a little slack.
+      const slack = multiplayerMatchActive() && multiplayer.isHost && playerIndex === multiplayer.remotePlayerIndex ? MULTIPLAYER_REMOTE_COOLDOWN_SLACK : 0;
+
+      if (player.isAttacking || now < player.attackReadyAt - slack) {
+        return false;
       }
 
       // The weapon is locked in when the swing starts, so a pickup mid-punch can't change it.
@@ -2072,11 +2110,19 @@
         player.isAttacking = false;
         player.el.classList.remove("is-attacking");
       }, attack.duration);
+      return true;
     }
 
     // Round and full-match reset helpers.
     function resetRound() {
       heldKeys.clear();
+
+      // The host numbers rounds so the guest can tell when to reset its own screen.
+      if (multiplayerMatchActive() && multiplayer.isHost) {
+        multiplayer.round += 1;
+        multiplayer.remotePoses = [];
+        multiplayer.stallBuffer = 0;
+      }
       roundLabel.textContent = multiplayerMatchActive()
         ? `${players[0].name} vs ${players[1].name}`
         : currentMap.roundTitle;
@@ -2097,6 +2143,7 @@
         player.hasHitThisSwing = false;
         player.dashStartedAt = 0;
         player.dashReadyAt = 0;
+        player.attackView = null;
         player.el.classList.remove("is-attacking", "is-dashing", "is-dead", "is-hit", "is-walking");
       });
       // Every round starts with bare fists and a fresh race for the first sword.
@@ -2156,13 +2203,33 @@
         lastDirectAt: 0,
         activeLink: "",
         relays: [],
-        preferredRelay: null,
         relayTopic: "",
         nextSeq: 0,
         seenMessages: new Set(),
         lastStateSeq: 0,
-        lastMoveSeq: 0,
         lastHeardAt: 0,
+        // Real-time sync: the fast channel, the opponent's buffered poses, and clock tracking.
+        fastChannel: null,
+        remotePoses: [],
+        clockDelta: null,
+        delayWindow: -1,
+        windowMin: Infinity,
+        previousWindowMin: Infinity,
+        lateness: 20,
+        sendGap: 50,
+        lastRemoteSentAt: 0,
+        interpDelay: 120,
+        stallBuffer: 0,
+        lastRemoteFrameAt: 0,
+        roundTrips: [],
+        platformOffset: 0,
+        platformOffsetReady: false,
+        round: 0,
+        remotePaused: false,
+        lastPoseSentAt: 0,
+        lastPoseKey: "",
+        lastPoseMotion: null,
+        hostHistory: [],
         searchStartedAt: 0,
         lobbyNotice: "",
         heartbeatTimer: null,
@@ -2207,6 +2274,13 @@
 
       // A non-forced end lets the goodbye message flush before the socket closes.
       multiplayer.relays.forEach(({ client }) => client.end(false));
+
+      try {
+        multiplayer.fastChannel?.channel?.close();
+      } catch (error) {
+        // Already closed.
+      }
+
       const room = multiplayer.room;
 
       if (room) {
@@ -2273,17 +2347,17 @@
       const connected = multiplayer.relays.filter(({ client }) => client.connected);
       let targets = connected;
 
-      // High-rate match traffic sticks to one broker the opponent was recently heard on.
+      // Match traffic goes to the two brokers the opponent was heard on most recently. Public
+      // brokers sometimes hold a message for half a second; two rarely do it at the same moment,
+      // and the receiver keeps whichever copy arrives first.
       if (matchTraffic) {
         const now = performance.now();
-        const fresh = connected.filter((relay) => now - relay.lastOpponentAt < MULTIPLAYER_RELAY_STALE_AFTER);
+        const fresh = connected
+          .filter((relay) => now - relay.lastOpponentAt < MULTIPLAYER_RELAY_STALE_AFTER)
+          .sort((a, b) => b.lastOpponentAt - a.lastOpponentAt);
 
-        if (!fresh.includes(multiplayer.preferredRelay)) {
-          multiplayer.preferredRelay = fresh.sort((a, b) => b.lastOpponentAt - a.lastOpponentAt)[0] || null;
-        }
-
-        if (multiplayer.preferredRelay) {
-          targets = [multiplayer.preferredRelay];
+        if (fresh.length) {
+          targets = fresh.slice(0, 2);
         }
       }
 
@@ -2312,6 +2386,132 @@
       const envelope = makeMultiplayerEnvelope(type, data, to);
       sendDirect(envelope);
       sendRelay(envelope);
+    }
+
+    // A second data channel on the direct connection carries the frequent position updates. It is
+    // unordered and never retransmits, so a lost packet is skipped instead of holding up the ones
+    // behind it. Both sides create it with the same id, so the connection needs no renegotiation.
+    function ensureFastChannel() {
+      const peerId = multiplayer.directPeerId;
+      const connection = peerId ? multiplayer.room?.getPeers()?.[peerId] : null;
+
+      if (!connection || multiplayer.fastChannel?.connection === connection) {
+        return;
+      }
+
+      try {
+        multiplayer.fastChannel?.channel?.close();
+      } catch (error) {
+        // The old channel is already gone.
+      }
+
+      let channel = null;
+
+      try {
+        channel = connection.createDataChannel("bos-fast", { negotiated: true, id: MULTIPLAYER_FAST_CHANNEL_ID, ordered: false, maxRetransmits: 0 });
+        channel.onmessage = (event) => {
+          try {
+            receiveMultiplayerMessage(JSON.parse(event.data), { directPeerId: peerId });
+          } catch (error) {
+            // Ignore anything that is not one of our messages.
+          }
+        };
+      } catch (error) {
+        console.warn("Fast channel unavailable, using the reliable link", error);
+      }
+
+      multiplayer.fastChannel = { connection, channel };
+    }
+
+    // Frequent updates use the fast channel when it's open, otherwise the usual best path.
+    function sendRealtime(type, data) {
+      const channel = multiplayer.fastChannel?.channel;
+
+      if (multiplayer.remotePeerId && channel?.readyState === "open" && directLinkHealthy()) {
+        try {
+          channel.send(JSON.stringify(makeMultiplayerEnvelope(type, data, multiplayer.remotePeerId)));
+          return;
+        } catch (error) {
+          // Fall back to the reliable paths below.
+        }
+      }
+
+      sendToOpponent(type, data);
+    }
+
+    function realtimeInterval() {
+      return directLinkHealthy() ? MULTIPLAYER_DIRECT_STATE_INTERVAL : MULTIPLAYER_STATE_INTERVAL;
+    }
+
+    // The smallest recent (arrival - sent) gap is the opponent's clock offset plus the fastest
+    // one-way trip. How late updates run past it, and how often they come, set how far in the
+    // past the opponent is drawn: just enough that there is usually a newer update to blend toward.
+    function trackRemoteTiming(sentAt, now) {
+      if (typeof sentAt !== "number") {
+        return;
+      }
+
+      const delay = now - sentAt;
+      const windowIndex = Math.floor(now / 4000);
+
+      if (windowIndex !== multiplayer.delayWindow) {
+        multiplayer.delayWindow = windowIndex;
+        multiplayer.previousWindowMin = multiplayer.windowMin;
+        multiplayer.windowMin = Infinity;
+      }
+
+      multiplayer.windowMin = Math.min(multiplayer.windowMin, delay);
+      multiplayer.clockDelta = Math.min(multiplayer.windowMin, multiplayer.previousWindowMin);
+      multiplayer.lateness += (delay - multiplayer.clockDelta - multiplayer.lateness) * .1;
+
+      if (multiplayer.lastRemoteSentAt) {
+        const gap = sentAt - multiplayer.lastRemoteSentAt;
+
+        if (gap > 0 && gap < 500) {
+          multiplayer.sendGap += (gap - multiplayer.sendGap) * .1;
+        }
+      }
+
+      multiplayer.lastRemoteSentAt = Math.max(multiplayer.lastRemoteSentAt, sentAt);
+      multiplayer.interpDelay = clamp(multiplayer.sendGap * 1.2 + multiplayer.lateness * 1.5 + 10, MULTIPLAYER_INTERP_MIN, MULTIPLAYER_INTERP_MAX);
+    }
+
+    function recordRoundTrip(roundTrip) {
+      if (roundTrip < 0 || roundTrip > 5000) {
+        return;
+      }
+
+      multiplayer.roundTrips.push(roundTrip);
+
+      if (multiplayer.roundTrips.length > 8) {
+        multiplayer.roundTrips.shift();
+      }
+    }
+
+    function roundTripEstimate() {
+      return multiplayer.roundTrips.length ? Math.min(...multiplayer.roundTrips) : 0;
+    }
+
+    // Moving platforms run on the host's clock on both screens. The guest estimates that clock
+    // (offset plus half the round trip) and eases toward it, so platforms never visibly jump.
+    function syncPlatformClock() {
+      if (!multiplayerMatchActive() || multiplayer.isHost || multiplayer.clockDelta === null) {
+        return;
+      }
+
+      const target = roundTripEstimate() / 2 - multiplayer.clockDelta;
+
+      if (!multiplayer.platformOffsetReady) {
+        multiplayer.platformOffset = target;
+        multiplayer.platformOffsetReady = true;
+        return;
+      }
+
+      multiplayer.platformOffset += clamp(target - multiplayer.platformOffset, -2, 2);
+    }
+
+    function platformClock(now) {
+      return multiplayerMatchActive() && !multiplayer.isHost ? now + multiplayer.platformOffset : now;
     }
 
     function receiveMultiplayerMessage(envelope, source) {
@@ -2356,6 +2556,12 @@
         handleMultiplayerInput(envelope);
       } else if (envelope.type === "state") {
         applyMultiplayerState(envelope);
+      } else if (envelope.type === "pose") {
+        applyRemotePose(envelope);
+      } else if (envelope.type === "ping" && envelope.from === multiplayer.remotePeerId && typeof envelope.data?.t === "number") {
+        sendToOpponent("pong", { t: envelope.data.t });
+      } else if (envelope.type === "pong" && envelope.from === multiplayer.remotePeerId && typeof envelope.data?.t === "number") {
+        recordRoundTrip(performance.now() - envelope.data.t);
       } else if (envelope.type === "bye" && envelope.from === multiplayer.remotePeerId) {
         handleOpponentLeft();
       }
@@ -2502,13 +2708,9 @@
         return;
       }
 
-      // The guest's heartbeat repeats its held movement keys in case a move message was lost.
-      if (!multiplayer.isHost && multiplayer.status === "playing") {
-        sendOnAllPaths("input", localMovePayload(), multiplayer.remotePeerId);
-      } else {
-        sendOnAllPaths("ping", {}, multiplayer.remotePeerId);
-      }
-
+      // Pings keep every path verified and measure the round trip (the reply is a "pong").
+      sendOnAllPaths("ping", { t: performance.now() }, multiplayer.remotePeerId);
+      ensureFastChannel();
       const link = directLinkHealthy() ? "direct" : "relay";
 
       if (link !== multiplayer.activeLink) {
@@ -2709,50 +2911,47 @@
       input[direction] = pressed;
     }
 
-    function handleMultiplayerInput({ from, seq, data }) {
+    // A guest's swing (or pickup) request. The host remembers where the guest stood and which
+    // moment of the host's timeline the guest's screen showed, to judge the swing fairly.
+    function handleMultiplayerInput({ from, data }) {
       if (!multiplayer.isHost || multiplayer.status !== "playing" || from !== multiplayer.remotePeerId) {
         return;
       }
 
-      const playerIndex = multiplayer.remotePlayerIndex;
+      if (data?.kind !== "action" || data.action !== "attack") {
+        return;
+      }
 
-      // Move messages carry both keys, so only the newest one matters if paths reorder them.
-      if (data?.kind === "move") {
-        if (seq > multiplayer.lastMoveSeq) {
-          multiplayer.lastMoveSeq = seq;
-          applyMultiplayerMove(playerIndex, "left", Boolean(data.left));
-          applyMultiplayerMove(playerIndex, "right", Boolean(data.right));
+      const index = multiplayer.remotePlayerIndex;
+      const frame = frameSize();
+      players[index].attackView = typeof data.view === "number" && typeof data.x === "number"
+        ? {
+          lag: clamp(performance.now() - data.view, 0, MULTIPLAYER_LAG_COMPENSATION_MAX),
+          x: data.x * frame.width,
+          y: data.y * frame.height,
+          facing: data.f < 0 ? -1 : 1
         }
-
-        return;
-      }
-
-      if (data?.kind !== "action") {
-        return;
-      }
-
-      if (data.action === "jump") {
-        startJump(playerIndex);
-      } else if (data.action === "attack") {
-        startAttack(playerIndex);
-      } else if (data.action === "dash") {
-        startDash(playerIndex);
-      }
+        : null;
+      startAttack(index);
     }
 
-    function sendLocalMultiplayerInput(payload) {
-      if (multiplayer.isHost) {
-        return;
-      }
-
-      sendToOpponent("input", payload);
+    function sendGuestAttack() {
+      const player = players[multiplayer.localPlayerIndex];
+      const frame = frameSize();
+      // The moment of the host's timeline this screen is showing (see updateRemoteFighter).
+      const view = multiplayer.clockDelta === null ? null : performance.now() - multiplayer.clockDelta - multiplayer.interpDelay - multiplayer.stallBuffer;
+      sendToOpponent("input", {
+        kind: "action",
+        action: "attack",
+        view,
+        x: player.x / frame.width,
+        y: player.y / frame.height,
+        f: player.facing < 0 ? -1 : 1
+      });
     }
 
-    function localMovePayload() {
-      const input = multiplayerInputs[multiplayer.localPlayerIndex];
-      return { kind: "move", left: Boolean(input?.left), right: Boolean(input?.right) };
-    }
-
+    // Each player moves their own fighter on their own screen, so controls respond instantly.
+    // Only swings and pickups go through the host, which decides hits, damage, and weapons.
     function handleMultiplayerKeyDown(event) {
       if (!multiplayerMatchActive() || !MULTIPLAYER_CONTROL_KEYS.has(event.code)) {
         return false;
@@ -2762,13 +2961,7 @@
       const playerIndex = multiplayer.localPlayerIndex;
 
       if (event.code === MULTIPLAYER_KEYS.left || event.code === MULTIPLAYER_KEYS.right) {
-        const direction = event.code === MULTIPLAYER_KEYS.left ? "left" : "right";
-
-        if (!multiplayerInputs[playerIndex][direction]) {
-          applyMultiplayerMove(playerIndex, direction, true);
-          sendLocalMultiplayerInput(localMovePayload());
-        }
-
+        applyMultiplayerMove(playerIndex, event.code === MULTIPLAYER_KEYS.left ? "left" : "right", true);
         return true;
       }
 
@@ -2777,24 +2970,13 @@
       }
 
       if (event.code === MULTIPLAYER_KEYS.jump) {
-        if (multiplayer.isHost) {
-          startJump(playerIndex);
-        } else {
-          sendLocalMultiplayerInput({ kind: "action", action: "jump" });
-        }
+        startJump(playerIndex);
       } else if (event.code === MULTIPLAYER_KEYS.attack) {
-        if (multiplayer.isHost) {
-          startAttack(playerIndex);
-        } else {
-          sendLocalMultiplayerInput({ kind: "action", action: "attack" });
+        if (startAttack(playerIndex) && !multiplayer.isHost) {
+          sendGuestAttack();
         }
       } else if (event.code === MULTIPLAYER_KEYS.dash || event.code === MULTIPLAYER_KEYS.dashAlternate) {
-        // The host runs the dash, so a guest's dash is invulnerable on the authoritative simulation too.
-        if (multiplayer.isHost) {
-          startDash(playerIndex);
-        } else {
-          sendLocalMultiplayerInput({ kind: "action", action: "dash" });
-        }
+        startDash(playerIndex);
       }
 
       return true;
@@ -2806,34 +2988,38 @@
       }
 
       event.preventDefault();
-      const direction = event.code === MULTIPLAYER_KEYS.left ? "left" : "right";
-      applyMultiplayerMove(multiplayer.localPlayerIndex, direction, false);
-      sendLocalMultiplayerInput(localMovePayload());
+      applyMultiplayerMove(multiplayer.localPlayerIndex, event.code === MULTIPLAYER_KEYS.left ? "left" : "right", false);
       return true;
     }
 
-    // Positions travel as fractions of the frame so screens of any size line up.
-    function serializeMultiplayerPlayer(player, frame) {
-      return {
-        hp: player.hp,
-        lives: player.lives,
-        x: player.x / frame.width,
-        y: player.y / frame.height,
-        vy: player.vy / frame.height,
-        grounded: player.grounded,
-        standingOn: player.standingOn,
-        airJumpsUsed: player.airJumpsUsed,
-        facing: player.facing,
-        isDead: player.isDead,
-        isAttacking: player.isAttacking,
-        isDashing: player.isDashing,
-        isWalking: player.el.classList.contains("is-walking"),
-        weapon: player.weapon,
-        attackWeapon: player.attackWeapon
+    // A fighter's motion as fractions of the frame, so screens of any size line up. On a moving
+    // platform the position is also sent relative to the platform, which keeps the fighter
+    // planted on it on the other screen.
+    function serializeMotion(player, frame, platforms) {
+      const round4 = (value) => Math.round(value * 10000) / 10000;
+      const motion = {
+        x: round4(player.x / frame.width),
+        y: round4(player.y / frame.height),
+        vy: round4(player.vy / frame.height),
+        f: player.facing < 0 ? -1 : 1,
+        g: player.grounded ? 1 : 0,
+        s: player.standingOn || "",
+        a: player.airJumpsUsed,
+        w: player.el.classList.contains("is-walking") ? 1 : 0,
+        d: player.isDashing ? 1 : 0
       };
+      const support = player.grounded && platforms.find((platform) => platform.id === player.standingOn);
+
+      if (support?.moving) {
+        motion.px = round4((player.x - support.left) / frame.width);
+      }
+
+      return motion;
     }
 
-    // Host sends snapshots; guest applies snapshots instead of running physics locally.
+    // Host -> guest, 20 to 30 times a second: the host fighter's motion, plus everything the host
+    // decides (health, lives, deaths, weapons, the round number, and banner text). Each update is
+    // complete on its own, so losing one on the fast channel costs nothing.
     function sendMultiplayerState(force = false) {
       if (!multiplayerMatchActive() || !multiplayer.isHost || !multiplayer.remotePeerId) {
         return;
@@ -2841,111 +3027,153 @@
 
       const now = performance.now();
 
-      if (!force && now - multiplayer.lastStateSentAt < MULTIPLAYER_STATE_INTERVAL) {
+      if (!force && now - multiplayer.lastStateSentAt < realtimeInterval()) {
         return;
       }
 
       multiplayer.lastStateSentAt = now;
       const frame = frameSize();
-      sendToOpponent("state", {
-        matchId: multiplayer.matchId,
-        mapId: currentMap.id,
-        roundLabel: roundLabel.textContent,
-        gameOver,
-        winnerVisible: !winnerBanner.classList.contains("is-hidden"),
-        winnerMessage: winnerMessage.textContent,
-        players: players.map((player) => serializeMultiplayerPlayer(player, frame)),
-        // Ages rather than timestamps, since the two computers' clocks don't match.
-        weapons: weaponPlatforms.map((weapon) => ({
-          id: weapon.id,
-          left: weapon.left,
-          y: weapon.y,
-          age: now - weapon.spawnedAt,
-          takenAge: weapon.takenAt ? now - weapon.takenAt : -1
-        }))
+      const host = players[multiplayer.localPlayerIndex];
+      const round4 = (value) => Math.round(value * 10000) / 10000;
+      sendRealtime("state", {
+        t: now,
+        m: multiplayer.matchId,
+        r: multiplayer.round,
+        p: roundResetTimer ? 1 : 0,
+        go: gameOver ? 1 : 0,
+        me: { ...serializeMotion(host, frame, mapPlatformRects(now)), k: host.isAttacking ? 1 : 0, q: host.attackWeapon },
+        hp: players.map((player) => player.hp),
+        lv: players.map((player) => player.lives),
+        dd: players.map((player) => (player.isDead ? 1 : 0)),
+        wp: players.map((player) => player.weapon),
+        ws: weaponPlatforms.map((weapon) => [weapon.id, round4(weapon.left), round4(weapon.y), Math.round(now - weapon.spawnedAt), weapon.takenAt ? Math.round(now - weapon.takenAt) : -1]),
+        ui: [currentMap.id, roundLabel.textContent, winnerBanner.classList.contains("is-hidden") ? 0 : 1, winnerMessage.textContent]
       });
     }
 
-    function applyMultiplayerState({ from, seq, data }) {
-      if (multiplayer.isHost || multiplayer.status !== "playing" || from !== multiplayer.remotePeerId || data?.matchId !== multiplayer.matchId) {
+    // Guest -> host: the guest fighter's own motion. A fighter standing still only resends now and then.
+    function sendLocalPose(now) {
+      if (!multiplayer.remotePeerId) {
         return;
       }
 
-      // Snapshots can arrive out of order when the link switches paths; keep the newest.
+      const interval = realtimeInterval();
+
+      if (now - multiplayer.lastPoseSentAt < interval) {
+        return;
+      }
+
+      const motion = serializeMotion(players[multiplayer.localPlayerIndex], frameSize(), mapPlatformRects(platformClock(now)));
+      const key = JSON.stringify(motion);
+
+      if (key === multiplayer.lastPoseKey) {
+        if (now - multiplayer.lastPoseSentAt < MULTIPLAYER_POSE_KEEPALIVE) {
+          return;
+        }
+      } else if (multiplayer.lastPoseMotion && now - multiplayer.lastPoseSentAt > interval * 1.5) {
+        // Moving again after standing still: resend the resting pose first, so the other screen
+        // starts the motion now rather than back when the last update went out.
+        sendRealtime("pose", { ...multiplayer.lastPoseMotion, t: now - 1, r: multiplayer.round });
+      }
+
+      multiplayer.lastPoseKey = key;
+      multiplayer.lastPoseMotion = motion;
+      multiplayer.lastPoseSentAt = now;
+      sendRealtime("pose", { ...motion, t: now, r: multiplayer.round });
+    }
+
+    function applyMultiplayerState({ from, seq, data }) {
+      if (multiplayer.isHost || multiplayer.status !== "playing" || from !== multiplayer.remotePeerId || data?.m !== multiplayer.matchId) {
+        return;
+      }
+
+      // Updates can arrive out of order on the fast channel or when paths switch; keep the newest.
       if (seq <= multiplayer.lastStateSeq) {
         return;
       }
 
       multiplayer.lastStateSeq = seq;
-      const frame = frameSize();
+      const now = performance.now();
+      const [mapId, label, winnerVisible, message] = data.ui || [];
+      trackRemoteTiming(data.t, now);
 
-      if (data.mapId && currentMap.id !== data.mapId) {
-        setMap(data.mapId);
+      if (mapId && currentMap.id !== mapId) {
+        setMap(mapId);
       }
 
-      roundLabel.textContent = data.roundLabel || currentMap.roundTitle;
-      gameOver = Boolean(data.gameOver);
-      const now = performance.now();
+      // A new round on the host: reset this screen too (spawn points, weapons, fists).
+      if (data.r !== multiplayer.round) {
+        multiplayer.round = data.r;
+        multiplayer.remotePoses = [];
+        multiplayer.stallBuffer = 0;
+        resetRound();
+      }
+
+      multiplayer.remotePaused = Boolean(data.p);
+      gameOver = Boolean(data.go);
+
+      if (data.me) {
+        pushRemotePose(data.me, data.t);
+      }
+
       weaponPlatforms.length = 0;
-      (data.weapons || []).forEach((weapon) => {
-        weaponPlatforms.push({
-          id: weapon.id,
-          left: weapon.left,
-          y: weapon.y,
-          spawnedAt: now - weapon.age,
-          takenAt: weapon.takenAge >= 0 ? now - weapon.takenAge : 0
-        });
+      (data.ws || []).forEach(([id, left, y, age, takenAge]) => {
+        weaponPlatforms.push({ id, left, y, spawnedAt: now - age, takenAt: takenAge >= 0 ? now - takenAge : 0 });
       });
 
-      data.players?.forEach((snapshot, index) => {
-        const player = players[index];
+      // Health, lives, deaths, and weapons belong to the host. Only touch the page when they change.
+      players.forEach((player, index) => {
+        const hp = data.hp?.[index] ?? player.hp;
+        const lives = data.lv?.[index] ?? player.lives;
+        const dead = Boolean(data.dd?.[index]);
+        const weapon = data.wp?.[index] || "fists";
 
-        if (!player || !snapshot) {
-          return;
-        }
-
-        // The host plays these effects itself; replay them from the snapshot changes here.
-        if (snapshot.isAttacking && !player.isAttacking) {
-          playSwingSound(snapshot.attackWeapon);
-        }
-
-        if (snapshot.weapon === "sword" && player.weapon !== "sword") {
+        if (weapon === "sword" && player.weapon !== "sword") {
           playPickupSound();
         }
 
-        player.weapon = snapshot.weapon || "fists";
-        player.attackWeapon = snapshot.attackWeapon || player.weapon;
+        player.weapon = weapon;
 
-        if (snapshot.hp < player.hp) {
+        if (hp < player.hp) {
           flashHit(player);
         }
 
-        if (snapshot.lives < player.lives) {
-          playLifeLostSound();
+        if (hp !== player.hp) {
+          setPlayerHp(player, hp);
         }
 
-        player.lives = snapshot.lives;
-        player.x = snapshot.x * frame.width;
-        player.y = snapshot.y * frame.height;
-        player.vy = snapshot.vy * frame.height;
-        player.grounded = snapshot.grounded;
-        player.standingOn = snapshot.standingOn;
-        player.airJumpsUsed = snapshot.airJumpsUsed;
-        player.facing = snapshot.facing;
-        player.isDead = snapshot.isDead;
-        player.isAttacking = snapshot.isAttacking;
-        player.isDashing = snapshot.isDashing;
-        setPlayerHp(player, snapshot.hp);
-        drawLives(player);
-        player.el.classList.toggle("is-dead", snapshot.isDead);
-        player.el.classList.toggle("is-attacking", snapshot.isAttacking);
-        player.el.classList.toggle("is-dashing", snapshot.isDashing);
-        player.el.classList.toggle("is-walking", snapshot.isWalking);
+        if (lives !== player.lives) {
+          if (lives < player.lives) {
+            playLifeLostSound();
+          }
+
+          player.lives = lives;
+          drawLives(player);
+        }
+
+        if (dead !== player.isDead) {
+          player.isDead = dead;
+          player.el.classList.toggle("is-dead", dead);
+
+          if (dead) {
+            player.isAttacking = false;
+            player.isDashing = false;
+          }
+        }
       });
 
-      winnerBanner.classList.toggle("is-hidden", !data.winnerVisible);
-      winnerBanner.classList.add("no-replay");
-      winnerMessage.textContent = data.winnerMessage || "";
+      if (label && roundLabel.textContent !== label) {
+        roundLabel.textContent = label;
+      }
+
+      if (winnerBanner.classList.contains("is-hidden") === Boolean(winnerVisible)) {
+        winnerBanner.classList.toggle("is-hidden", !winnerVisible);
+        winnerBanner.classList.add("no-replay");
+      }
+
+      if (winnerMessage.textContent !== (message || "")) {
+        winnerMessage.textContent = message || "";
+      }
 
       if (gameOver && !multiplayer.returnTimer) {
         multiplayer.returnTimer = window.setTimeout(() => {
@@ -2953,6 +3181,158 @@
           showMainMenu(false);
         }, WINNER_TO_MAP_DELAY);
       }
+    }
+
+    function applyRemotePose({ from, data }) {
+      if (!multiplayer.isHost || multiplayer.status !== "playing" || from !== multiplayer.remotePeerId) {
+        return;
+      }
+
+      // Ignore poses from before the latest round reset.
+      if (data?.r !== multiplayer.round) {
+        return;
+      }
+
+      trackRemoteTiming(data.t, performance.now());
+      pushRemotePose(data, data.t);
+    }
+
+    function pushRemotePose(pose, sentAt) {
+      const poses = multiplayer.remotePoses;
+      let index = poses.length;
+
+      while (index > 0 && poses[index - 1].t > sentAt) {
+        index -= 1;
+      }
+
+      if (index > 0 && poses[index - 1].t === sentAt) {
+        return;
+      }
+
+      poses.splice(index, 0, { ...pose, t: sentAt });
+
+      while (poses.length > 2 && poses[0].t < poses[poses.length - 1].t - MULTIPLAYER_POSE_BUFFER) {
+        poses.shift();
+      }
+    }
+
+    // Draws the opponent's fighter slightly in the past, blending between buffered updates, so it
+    // moves smoothly at the screen's frame rate however unevenly the updates arrive.
+    function updateRemoteFighter(now, platforms) {
+      const player = players[multiplayer.remotePlayerIndex];
+      const poses = multiplayer.remotePoses;
+
+      if (!player || player.isDead || !poses.length || multiplayer.clockDelta === null) {
+        return;
+      }
+
+      const frame = frameSize();
+      const newest = poses[poses.length - 1];
+      const frameTime = multiplayer.lastRemoteFrameAt ? Math.min(100, now - multiplayer.lastRemoteFrameAt) : 16;
+      let renderAt = now - multiplayer.clockDelta - multiplayer.interpDelay - multiplayer.stallBuffer;
+      const overrun = renderAt - newest.t - MULTIPLAYER_EXTRAPOLATE_LIMIT;
+      multiplayer.lastRemoteFrameAt = now;
+
+      // Updates stopped arriving (a network stall): hold the timeline here instead of jumping
+      // ahead, then replay the backlog smoothly and catch up by playing a little faster.
+      // A fighter at rest sends updates only now and then, so silence from one is not a stall.
+      const resting = !newest.w && !newest.d && newest.g;
+
+      if (overrun > 0 && !resting) {
+        multiplayer.stallBuffer = Math.min(MULTIPLAYER_STALL_BUFFER_MAX, multiplayer.stallBuffer + overrun);
+        renderAt = now - multiplayer.clockDelta - multiplayer.interpDelay - multiplayer.stallBuffer;
+      } else {
+        multiplayer.stallBuffer = Math.max(0, multiplayer.stallBuffer - frameTime * MULTIPLAYER_STALL_CATCH_UP);
+      }
+
+      let index = poses.length - 1;
+
+      while (index > 0 && poses[index].t > renderAt) {
+        index -= 1;
+      }
+
+      const before = poses[index];
+      const after = poses[index + 1];
+      let x = before.x;
+      let y = before.y;
+      let offset = before.px;
+
+      if (after && renderAt >= before.t) {
+        const mix = clamp((renderAt - before.t) / Math.max(1, after.t - before.t), 0, 1);
+
+        // Blend between the two updates, unless the fighter jumped across the arena (a respawn).
+        if (Math.abs(after.x - before.x) < .15 && Math.abs(after.y - before.y) < .2) {
+          x += (after.x - before.x) * mix;
+          y += (after.y - before.y) * mix;
+        }
+
+        if (offset !== undefined && after.px !== undefined && after.s === before.s) {
+          offset += (after.px - before.px) * mix;
+        }
+      } else if (!after && index > 0 && (before.w || before.d || !before.g)) {
+        // Past the newest update: a fighter that was still moving keeps going briefly along its
+        // last motion instead of freezing. One that had stopped stays exactly where it stopped.
+        const previous = poses[index - 1];
+        const ahead = clamp(renderAt - before.t, 0, MULTIPLAYER_EXTRAPOLATE_LIMIT);
+        const span = before.t - previous.t;
+
+        if (span > 0 && Math.abs(before.x - previous.x) < .15) {
+          x += (before.x - previous.x) * ahead / span;
+          y += (before.y - previous.y) * ahead / span;
+        }
+      }
+
+      const support = offset !== undefined ? platforms.find((platform) => platform.id === before.s) : null;
+      const walking = Boolean(before.w);
+      player.x = support ? support.left + offset * frame.width : x * frame.width;
+      player.y = support ? support.y : y * frame.height;
+      player.vy = before.vy * frame.height;
+      player.facing = before.f < 0 ? -1 : 1;
+      player.grounded = Boolean(before.g);
+      player.standingOn = before.s || null;
+      player.airJumpsUsed = before.a || 0;
+
+      if (player.el.classList.contains("is-walking") !== walking) {
+        player.el.classList.toggle("is-walking", walking);
+      }
+
+      // The host grants dash invulnerability from the newest update, not the delayed one.
+      player.isDashing = Boolean((multiplayer.isHost ? newest : before).d);
+
+      // The host's swings reach the guest with its motion; the host runs the guest's swings itself.
+      if (!multiplayer.isHost) {
+        const attacking = Boolean(before.k);
+
+        if (attacking && !player.isAttacking) {
+          playSwingSound(before.q);
+        }
+
+        player.isAttacking = attacking;
+        player.attackWeapon = before.q || player.weapon;
+      }
+    }
+
+    // The host's own recent positions, for judging a guest's swing against what the guest saw.
+    function recordHostHistory(now) {
+      const player = players[multiplayer.localPlayerIndex];
+      const history = multiplayer.hostHistory;
+      history.push({ t: now, x: player.x, y: player.y });
+
+      while (history.length && history[0].t < now - 1000) {
+        history.shift();
+      }
+    }
+
+    function hostPositionAt(time) {
+      const history = multiplayer.hostHistory;
+
+      for (let index = history.length - 1; index >= 0; index -= 1) {
+        if (history[index].t <= time) {
+          return history[index];
+        }
+      }
+
+      return history[0] || null;
     }
 
     // Spawn fighters on the currently selected map.
@@ -3117,13 +3497,8 @@
     // Keep movement state sane when the tab loses focus or the frame resizes.
     window.addEventListener("blur", () => {
       if (multiplayerMatchActive()) {
-        const input = multiplayerInputs[multiplayer.localPlayerIndex];
-
-        if (input?.left || input?.right) {
-          applyMultiplayerMove(multiplayer.localPlayerIndex, "left", false);
-          applyMultiplayerMove(multiplayer.localPlayerIndex, "right", false);
-          sendLocalMultiplayerInput(localMovePayload());
-        }
+        applyMultiplayerMove(multiplayer.localPlayerIndex, "left", false);
+        applyMultiplayerMove(multiplayer.localPlayerIndex, "right", false);
       }
 
       heldKeys.clear();
@@ -3153,91 +3528,56 @@
     let previousTime = performance.now();
 
     // Main animation loop: input, physics, moving platforms, attacks, and sync.
+    // Online, each player simulates only their own fighter and the opponent's follows their
+    // updates; combat, weapons, deaths, and rounds run only on the host (or in the local game).
     function update(now) {
       const delta = Math.min((now - previousTime) / 1000, 0.05);
       previousTime = now;
+      const online = multiplayerMatchActive();
+      const authority = !online || multiplayer.isHost;
+      syncPlatformClock();
+      const clock = platformClock(now);
 
-      // Menus, round breaks, and the multiplayer guest only render; the host runs physics.
-      if (uiBlocksGameInput() || (multiplayerMatchActive() && !multiplayer.isHost)) {
+      // Menus and round breaks only render; online, the opponent keeps easing into place.
+      if (uiBlocksGameInput()) {
+        if (online) {
+          updateRemoteFighter(now, mapPlatformRects(clock));
+          sendMultiplayerState();
+        }
+
         renderScene(now);
         requestAnimationFrame(update);
         return;
       }
 
-      updateWeapons(now);
-      const bounds = stageBounds();
-      const speed = walkSpeed();
-      const burstSpeed = dashSpeed();
-      const fall = gravity();
-      const platforms = mapPlatformRects(now);
-      const previousPlatforms = mapPlatformRects(now - delta * 1000);
+      if (authority) {
+        updateWeapons(now);
+      }
+
+      const physics = {
+        bounds: stageBounds(),
+        speed: walkSpeed(),
+        burstSpeed: dashSpeed(),
+        fall: gravity(),
+        platforms: mapPlatformRects(clock),
+        previousPlatforms: mapPlatformRects(clock - delta * 1000)
+      };
+
+      if (online) {
+        updateRemoteFighter(now, physics.platforms);
+      }
 
       players.forEach((player, index) => {
         if (player.isDead) {
           return;
         }
 
-        const direction = movementDirectionForPlayer(index);
-
-        if (player.isDashing) {
-          const dashElapsed = now - player.dashStartedAt;
-
-          if (dashElapsed >= DASH_DURATION) {
-            player.isDashing = false;
-            player.el.classList.remove("is-dashing");
-          } else {
-            player.x = clamp(player.x + player.facing * burstSpeed * delta, bounds.min, bounds.max);
-            player.el.classList.remove("is-walking");
-          }
+        if (!online || index === multiplayer.localPlayerIndex) {
+          moveFighter(player, index, now, delta, physics);
         }
 
-        if (!player.isDashing && direction !== 0) {
-          player.x = clamp(player.x + direction * speed * delta, bounds.min, bounds.max);
-          player.facing = direction;
-          player.el.classList.toggle("is-walking", !player.isAttacking);
-        } else if (!player.isDashing) {
-          player.el.classList.remove("is-walking");
-        }
-
-        if (player.grounded) {
-          const support = platforms.find((platform) => platform.id === player.standingOn && overlapsPlatform(player, platform))
-            || platforms.find((platform) => Math.abs(player.y - platform.y) < 4 && overlapsPlatform(player, platform));
-
-          if (support) {
-            const previousSupport = previousPlatforms.find((platform) => platform.id === support.id);
-
-            if (previousSupport) {
-              player.x = clamp(player.x + support.centerX - previousSupport.centerX, bounds.min, bounds.max);
-            }
-
-            player.y = support.y;
-            player.vy = 0;
-            player.standingOn = support.id;
-            player.airJumpsUsed = 0;
-          } else {
-            player.grounded = false;
-            player.standingOn = null;
-          }
-        }
-
-        if (!player.grounded) {
-          const previousY = player.y;
-          player.vy -= fall * delta;
-          player.y += player.vy * delta;
-
-          if (player.vy <= 0) {
-            const landingPlatform = platforms
-              .filter((platform) => previousY >= platform.y && player.y <= platform.y && overlapsPlatform(player, platform))
-              .sort((a, b) => b.y - a.y)[0];
-
-            if (landingPlatform) {
-              player.y = landingPlatform.y;
-              player.vy = 0;
-              player.grounded = true;
-              player.standingOn = landingPlatform.id;
-              player.airJumpsUsed = 0;
-            }
-          }
+        if (!authority) {
+          return;
         }
 
         if (player.isAttacking) {
@@ -3254,9 +3594,81 @@
         }
       });
 
-      sendMultiplayerState();
+      if (online && multiplayer.isHost) {
+        recordHostHistory(now);
+        sendMultiplayerState();
+      } else if (online) {
+        sendLocalPose(now);
+      }
+
       renderScene(now);
       requestAnimationFrame(update);
+    }
+
+    // Local physics for one fighter: walking, dashing, gravity, landing, and riding moving platforms.
+    function moveFighter(player, index, now, delta, { bounds, speed, burstSpeed, fall, platforms, previousPlatforms }) {
+      const direction = movementDirectionForPlayer(index);
+
+      if (player.isDashing) {
+        const dashElapsed = now - player.dashStartedAt;
+
+        if (dashElapsed >= DASH_DURATION) {
+          player.isDashing = false;
+          player.el.classList.remove("is-dashing");
+        } else {
+          player.x = clamp(player.x + player.facing * burstSpeed * delta, bounds.min, bounds.max);
+          player.el.classList.remove("is-walking");
+        }
+      }
+
+      if (!player.isDashing && direction !== 0) {
+        player.x = clamp(player.x + direction * speed * delta, bounds.min, bounds.max);
+        player.facing = direction;
+        player.el.classList.toggle("is-walking", !player.isAttacking);
+      } else if (!player.isDashing) {
+        player.el.classList.remove("is-walking");
+      }
+
+      if (player.grounded) {
+        const support = platforms.find((platform) => platform.id === player.standingOn && overlapsPlatform(player, platform))
+          || platforms.find((platform) => Math.abs(player.y - platform.y) < 4 && overlapsPlatform(player, platform));
+
+        if (support) {
+          const previousSupport = previousPlatforms.find((platform) => platform.id === support.id);
+
+          if (previousSupport) {
+            player.x = clamp(player.x + support.centerX - previousSupport.centerX, bounds.min, bounds.max);
+          }
+
+          player.y = support.y;
+          player.vy = 0;
+          player.standingOn = support.id;
+          player.airJumpsUsed = 0;
+        } else {
+          player.grounded = false;
+          player.standingOn = null;
+        }
+      }
+
+      if (!player.grounded) {
+        const previousY = player.y;
+        player.vy -= fall * delta;
+        player.y += player.vy * delta;
+
+        if (player.vy <= 0) {
+          const landingPlatform = platforms
+            .filter((platform) => previousY >= platform.y && player.y <= platform.y && overlapsPlatform(player, platform))
+            .sort((a, b) => b.y - a.y)[0];
+
+          if (landingPlatform) {
+            player.y = landingPlatform.y;
+            player.vy = 0;
+            player.grounded = true;
+            player.standingOn = landingPlatform.id;
+            player.airJumpsUsed = 0;
+          }
+        }
+      }
     }
 
     // Pixel-art fighters. Poses are skeletons (joint positions in sprite pixels) that are
@@ -4956,7 +5368,7 @@
       let platforms = [];
 
       if (playing) {
-        rects = mapPlatformRects(now);
+        rects = mapPlatformRects(platformClock(now));
         platforms = scenePlatforms(rects, frame, scale);
         art.drawPlatforms(ctx, platforms.filter((platform) => !platform.weapon), t);
         drawWeaponPlatforms(ctx, platforms.filter((platform) => platform.weapon), now, t);
