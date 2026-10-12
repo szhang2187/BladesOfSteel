@@ -12,6 +12,7 @@ https://szhang2187.github.io/BladesOfSteel/
 
 - Local two-player sword combat
 - Online multiplayer lobbies with 4 digit join codes that work across devices and networks
+- 16-bit pixel art: animated fencers, layered map scenery, hit sparks, dash trails, and screen shake
 - HP bars and three-life match system
 - Sword attacks, dashing, jump, and double jump
 - Dash invulnerability
@@ -78,6 +79,14 @@ Troubleshooting:
 - Open the browser console (F12). It shows `Multiplayer: using direct peer-to-peer link` or `Multiplayer: using relay servers`.
 - Add `?net=relay` or `?net=direct` to the page URL to test one path at a time. Both players must use the same setting.
 - To let more players use the direct link, add TURN servers to `MULTIPLAYER_TURN_SERVERS` in `index.html`, for example from a free Metered or ExpressTURN account.
+
+## Graphics
+
+Everything in a match is pixel art drawn in code on one small canvas (216 pixels tall), then scaled up with crisp pixels the way a 16-bit console would. There are no image files to edit:
+
+- Fighters are built from pose skeletons in `FIGHTER_POSES`, with team colors in `FIGHTER_PALETTES`.
+- Each map's scenery comes from `buildWeizenArt`, `buildAshigaruArt`, or `buildNeoArt`.
+- The fighter elements in the page are invisible hitboxes, so changing the art never changes gameplay.
 
 ## Publishing
 
