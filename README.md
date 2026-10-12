@@ -16,6 +16,7 @@ https://szhang2187.github.io/BladesOfSteel/
 - HP bars and three-life match system
 - Big arenas with 9 or 10 platforms each, every one reachable with a jump or double jump
 - Fists to start, plus swords that appear on glowing weapon platforms at random spots
+- Online sword throwing: a thrown sword arcs under gravity and hits much harder than a swing
 - Dashing, jump, and double jump
 - Dash invulnerability
 - Map selection screen
@@ -53,8 +54,10 @@ Each player uses the same controls on their own computer:
 - Move: `A` / `D`
 - Jump: `Space`
 - Double jump: press `Space` again in the air
-- Attack or pick up a sword: `E`
-- Dash: `Q` (`R` also works). You can't be hit during a dash, so it's how you slip through an attack.
+- Attack: left click
+- Throw your sword: right click
+- Pick up a sword: `E`
+- Dash: `Q` (`R` also works). You can't be hit during a dash, so it's how you slip through an attack, thrown swords included.
 
 ## How To Win
 
@@ -63,8 +66,10 @@ Each player starts with 100 HP and three lives. When a player loses all HP or fa
 Weapons:
 
 - Everyone starts each round with fists: quick punches with short reach that deal 8 damage.
-- A glowing weapon platform with a floating sword appears at a random reachable spot a few seconds into each round. Stand on it or next to it and press your attack key to grab the sword.
+- A glowing weapon platform with a floating sword appears at a random reachable spot a few seconds into each round. Stand on it or next to it and press your attack key to grab the sword (`E` in multiplayer).
 - A sword deals 20 damage and reaches more than twice as far. Its platform crumbles soon after the sword is taken, and another one appears a few seconds later while anyone is still unarmed.
+- In multiplayer, right click throws your sword. It flies fast and falls under the same gravity as the fighters, so on flat ground it carries about half the arena, and much farther from a high platform. A hit deals 50 damage, half a health bar. You're back to fists once the sword leaves your hand.
+- A sword that hits someone glances off and drops. One that misses sticks point first where it lands. Either way, either player can grab it with `E`. A sword that falls into the void is lost. No new weapon platform appears while a thrown sword is still in the arena.
 - Everyone goes back to fists when a life is lost.
 
 ## Multiplayer Notes
@@ -81,6 +86,7 @@ How a match stays smooth:
 - **Your own fighter moves instantly.** Each player simulates their own fighter's movement, jumps, and dashes on their own screen and sends its position 20 to 30 times a second. The host still decides everything that matters for the score: hits, damage, deaths, swords, and rounds.
 - **Your opponent moves smoothly.** Their updates are buffered and drawn a little in the past (usually 60 to 220 ms, adapting to the connection), blending between updates so they move at full frame rate. If updates stall, the game pauses the opponent briefly, then replays the backlog and quietly catches up instead of jumping.
 - **Hits are judged by what the guest saw.** When the guest swings, the host checks the swing against where its own fighter appeared on the guest's screen at that moment (lag compensation).
+- **Thrown swords fly at once and stay in step.** Your own throw leaves your hand immediately. On the other screen, the sword leaves your fighter's hand when that screen shows you throwing, then catches up to the present within a third of a second, so a hit shows when it actually lands. The host flies its own copy of a guest's throw from the same spot and moment, and judges its hits against what the guest saw. Where a sword lands is decided by the host, so it's stuck in the same spot on both screens.
 - **Fast lane for positions.** On the direct link, position updates use a separate data channel that never waits for lost packets, so one dropped packet doesn't hold up the rest. On the relay, each update goes to two brokers and the first copy to arrive wins.
 - **Moving platforms line up.** Both screens run Neo York's platforms on the host's clock, so they're in the same place for both players.
 
@@ -104,7 +110,7 @@ Everything in a match is pixel art drawn in code on one small canvas (360 pixels
 
 - Fighters are built from pose skeletons in `FIGHTER_POSES`, with team colors in `FIGHTER_PALETTES`.
 - Each map's scenery comes from `buildWeizenArt`, `buildAshigaruArt`, or `buildNeoArt`.
-- Platform layouts are in `WEIZEN_LAYOUT`, `ASHIGARU_LAYOUT`, and `NEO_LAYOUT`, as fractions of the screen. Damage, reach, and timing for fists and swords are in `WEAPONS`.
+- Platform layouts are in `WEIZEN_LAYOUT`, `ASHIGARU_LAYOUT`, and `NEO_LAYOUT`, as fractions of the screen. Damage, reach, and timing for fists and swords are in `WEAPONS`. A thrown sword's damage, speed, and lift are in `THROWN_SWORD_DAMAGE`, `THROW_SPEED_PER_WIDTH`, and `THROW_LIFT_PER_HEIGHT`.
 - The fighter elements in the page are invisible hitboxes, so changing the art never changes gameplay.
 
 ## Publishing

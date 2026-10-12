@@ -669,6 +669,15 @@
       .map-option {
         padding: 6px 6px 8px;
       }
+
+      /* Keeps the help text and its Back button inside a small frame. */
+      .help-panel {
+        padding: 12px 18px 14px;
+      }
+
+      .help-panel p {
+        line-height: 1.45;
+      }
     }
   </style>
 </head>
@@ -744,10 +753,10 @@
         <p>Dashing briefly makes you invulnerable.</p>
       </div>
       <div class="help-panel is-hidden" data-help-panel="multi">
-        <p><strong>Multiplayer:</strong> Each player uses these controls on their own computer.</p>
-        <p>A and D move, Space jumps, Space again double jumps, E attacks, and Q dashes forward.</p>
-        <p><strong>Dash:</strong> You can't be hit while dashing, so use Q to slip through an attack.</p>
+        <p><strong>Controls:</strong> A and D move, Space jumps (twice to double jump), left click attacks, right click throws your sword, E grabs a sword, and Q dashes.</p>
         <p><strong>Weapons:</strong> You start with fists (8 damage). Swords (20 damage, longer reach) appear on glowing platforms. Stand at one and press E to grab it.</p>
+        <p><strong>Throw:</strong> A thrown sword arcs down and deals 50 damage. A miss sticks where it lands, for anyone to grab.</p>
+        <p><strong>Dash:</strong> You can't be hit while dashing, so use Q to slip through an attack.</p>
       </div>
       <button class="menu-button help-back-button" type="button">Back</button>
     </section>
@@ -812,7 +821,7 @@
       <div class="match-found-box is-hidden">Match Found!</div>
       <div class="matchmaking-panel">
         <p class="matchmaking-status">Connecting to the multiplayer network...</p>
-        <p><strong>Controls:</strong> A and D move, Space jumps, E punches or grabs a sword, and Q dashes forward through attacks.</p>
+        <p><strong>Controls:</strong> A and D move, Space jumps, left click attacks, right click throws your sword, E grabs a sword, and Q dashes forward through attacks.</p>
         <p>Win by taking all three lives from your opponent.</p>
         <button class="menu-button cancel-matchmaking-button" type="button">Cancel</button>
       </div>
@@ -973,17 +982,19 @@
       { name: "P2", label: "Player 2", leftKey: "ArrowLeft", rightKey: "ArrowRight", jumpKey: "ArrowUp", attackKey: "Enter", dashKey: "Slash" }
     ];
 
-    // Multiplayer uses the same control keys for each player on their own device.
-    // Q dashes; R still works so players who learned the old key are not caught out.
+    // Multiplayer uses the same controls for each player on their own device. The mouse fights
+    // (left button attacks, right button throws the sword), E grabs a sword, and Q dashes;
+    // R still dashes too, so players who learned the old key are not caught out.
     const MULTIPLAYER_KEYS = {
       left: "KeyA",
       right: "KeyD",
       jump: "Space",
-      attack: "KeyE",
+      pickUp: "KeyE",
       dash: "KeyQ",
       dashAlternate: "KeyR"
     };
     const MULTIPLAYER_CONTROL_KEYS = new Set(Object.values(MULTIPLAYER_KEYS));
+    const MULTIPLAYER_MOUSE_BUTTONS = { attack: 0, throw: 2 };
 
     // Combat, movement, timing, and match tuning values.
     // Fighters start with fists; a sword from a weapon platform hits harder and reaches farther.
@@ -992,6 +1003,17 @@
       fists: { damage: 8, reach: .8, duration: 200, activeStart: 50, activeEnd: 140, cooldown: 340 },
       sword: { damage: 20, reach: 1.9, duration: 260, activeStart: 80, activeEnd: 190, cooldown: 520 }
     };
+    // A thrown sword leaves the hand at chest height, flies fast and slightly upward, and falls
+    // under the same gravity as the fighters: on flat ground it carries about half the arena,
+    // and much farther from up high. Speeds are fractions of the frame's width or height per second.
+    const THROWN_SWORD_DAMAGE = 50;
+    const THROW_SPEED_PER_WIDTH = 1.15;
+    const THROW_LIFT_PER_HEIGHT = .4;
+    const THROW_RECOVERY = 240;
+    const THROWN_SWORD_BOUNCE = .35;
+    // Half a sword's length as a fraction of the frame height (the 21-pixel blade on the 360-pixel scene).
+    const THROWN_SWORD_HALF_LENGTH = .029;
+    const THROWN_SWORD_STEP = 8;
     // Movement scales with the frame, so every screen size plays the same.
     const FIGHTER_WIDTH_FRACTION = .036;
     const FIGHTER_HEIGHT_FRACTION = .114;
@@ -1026,6 +1048,12 @@
     const MULTIPLAYER_LAG_COMPENSATION_MAX = 300;
     const MULTIPLAYER_REMOTE_COOLDOWN_SLACK = 100;
     const MULTIPLAYER_FAST_CHANNEL_ID = 9;
+    // Thrown swords online: how long a guest waits for the host to accept its throw, how quickly
+    // the opponent's sword catches up from their (delayed) fighter to the present, and how far a
+    // host update may trail this screen before it overrules a prediction.
+    const THROW_ACK_TIMEOUT = 1500;
+    const THROWN_SWORD_CATCH_UP = 300;
+    const THROWN_SWORD_SYNC_SLACK = 100;
 
     // Multiplayer networking settings. Every lobby has two paths between players:
     // - Relay: public MQTT brokers over secure WebSockets. Works on any network that can
@@ -1033,8 +1061,8 @@
     // - Direct: a WebRTC link set up by Trystero. Lower latency, but some networks block it.
     // Match traffic uses the direct link while it is healthy and falls back to the relay.
     // Bump these when the snapshot format changes so old and new pages never share a lobby.
-    const MULTIPLAYER_APP_ID = "blades-of-steel-szhang2187-v7";
-    const MULTIPLAYER_ROOM_PREFIX = "code-lobby-v5";
+    const MULTIPLAYER_APP_ID = "blades-of-steel-szhang2187-v8";
+    const MULTIPLAYER_ROOM_PREFIX = "code-lobby-v6";
     const MULTIPLAYER_MAP_ID = "weizen";
     // Library versions are pinned: unpinned imports silently pulled in breaking API changes.
     const TRYSTERO_MODULE_URL = "https://cdn.jsdelivr.net/npm/@trystero-p2p/nostr@0.26.0/+esm";
@@ -1217,6 +1245,10 @@
     const weaponPlatforms = [];
     let nextWeaponId = 1;
     let nextWeaponSpawnAt = 0;
+    // Swords in flight or stuck where they landed. Each thrower numbers its own throws, and the
+    // thrower's index is folded into the id (player 1's ids are even, player 2's odd).
+    const thrownSwords = [];
+    let nextThrowNumber = 1;
     const multiplayerModulePromises = new Map();
 
     // Multiplayer session state shared by lobby, match start, and network sync.
@@ -1686,32 +1718,39 @@
       return Number(heldKeys.has(player.rightKey)) - Number(heldKeys.has(player.leftKey));
     }
 
-    function playSwingSound(weapon = "sword") {
+    // A thrown sword reuses the swing sample, slowed into a heavier whoosh (rate below 1).
+    function playSwingSound(weapon = "sword", rate = 1) {
       const sound = swingSounds[nextSwingSound];
       const punch = weapon !== "sword";
       nextSwingSound = (nextSwingSound + 1) % swingSounds.length;
       sound.currentTime = 0;
       // Punches reuse the sword sample, sped up and softened into a lighter whoosh.
       sound.preservesPitch = false;
-      sound.playbackRate = punch ? 1.6 : 1;
+      sound.playbackRate = (punch ? 1.6 : 1) * rate;
       sound.volume = swingVolume * (punch ? .7 : 1);
       sound.play().catch(() => {});
     }
 
-    let pickupAudioContext = null;
+    let synthAudioContext = null;
 
-    // A short rising chime, synthesized so no extra sound file is needed.
+    // Pickup chimes and impacts are synthesized so no extra sound files are needed.
+    function synthAudio() {
+      synthAudioContext ||= new (window.AudioContext || window.webkitAudioContext)();
+      return synthAudioContext;
+    }
+
+    // A short rising chime.
     function playPickupSound() {
       try {
-        pickupAudioContext ||= new (window.AudioContext || window.webkitAudioContext)();
-        const start = pickupAudioContext.currentTime;
-        const gain = pickupAudioContext.createGain();
+        const audio = synthAudio();
+        const start = audio.currentTime;
+        const gain = audio.createGain();
         gain.gain.setValueAtTime(.0001, start);
         gain.gain.exponentialRampToValueAtTime(.12 * swingVolume + .0001, start + .02);
         gain.gain.exponentialRampToValueAtTime(.0001, start + .36);
-        gain.connect(pickupAudioContext.destination);
+        gain.connect(audio.destination);
         [[988, 0], [1319, .08], [1976, .16]].forEach(([frequency, offset]) => {
-          const tone = pickupAudioContext.createOscillator();
+          const tone = audio.createOscillator();
           tone.type = "square";
           tone.frequency.setValueAtTime(frequency, start + offset);
           tone.connect(gain);
@@ -1723,9 +1762,54 @@
       }
     }
 
+    // A thrown sword thunking into a platform, clanging off the arena's edge, or striking a fighter:
+    // a falling tone for the body of the sound plus a burst of noise for the crunch.
+    const IMPACT_SOUNDS = {
+      stick: { from: 220, to: 70, length: .18, volume: .16, wave: "triangle" },
+      clang: { from: 1500, to: 700, length: .2, volume: .07, wave: "square" },
+      hit: { from: 150, to: 45, length: .3, volume: .3, wave: "triangle" }
+    };
+
+    function playImpactSound(kind) {
+      try {
+        const { from, to, length, volume, wave } = IMPACT_SOUNDS[kind];
+        const audio = synthAudio();
+        const start = audio.currentTime;
+        const gain = audio.createGain();
+        gain.gain.setValueAtTime(volume * swingVolume + .0001, start);
+        gain.gain.exponentialRampToValueAtTime(.0001, start + length);
+        gain.connect(audio.destination);
+        const tone = audio.createOscillator();
+        tone.type = wave;
+        tone.frequency.setValueAtTime(from, start);
+        tone.frequency.exponentialRampToValueAtTime(to, start + length);
+        tone.connect(gain);
+        tone.start(start);
+        tone.stop(start + length);
+
+        const noise = audio.createBufferSource();
+        const samples = audio.createBuffer(1, Math.floor(audio.sampleRate * .07), audio.sampleRate);
+        const data = samples.getChannelData(0);
+
+        for (let index = 0; index < data.length; index += 1) {
+          data[index] = (Math.random() * 2 - 1) * (1 - index / data.length);
+        }
+
+        const noiseGain = audio.createGain();
+        noiseGain.gain.value = volume * .5 * swingVolume;
+        noise.buffer = samples;
+        noise.connect(noiseGain);
+        noiseGain.connect(audio.destination);
+        noise.start(start);
+      } catch (error) {
+        // Sound is optional; some browsers block audio until the page is interacted with.
+      }
+    }
+
     // Weapon platforms: spawning, expiry, and pickup. Only the host (or the local game) runs these.
     function resetWeapons(now = performance.now()) {
       weaponPlatforms.length = 0;
+      thrownSwords.length = 0;
       nextWeaponSpawnAt = now + WEAPON_FIRST_SPAWN_DELAY;
       players.forEach((player) => {
         player.weapon = "fists";
@@ -1782,7 +1866,8 @@
         }
       }
 
-      const swordWaiting = weaponPlatforms.some((weapon) => !weapon.takenAt);
+      // A thrown sword, in the air or stuck where it landed, is up for grabs like a platform's.
+      const swordWaiting = weaponPlatforms.some((weapon) => !weapon.takenAt) || thrownSwords.length > 0;
       const someoneUnarmed = players.some((player) => player.weapon !== "sword");
 
       if (now < nextWeaponSpawnAt || swordWaiting || !someoneUnarmed) {
@@ -1812,29 +1897,66 @@
         && player.y <= rect.y + height * .8) || null;
     }
 
+    // Where a landed sword is stuck: the point of its blade, in pixels (y up from the bottom).
+    // A sword stuck in a moving platform rides along with it.
+    function restingSwordAnchor(rest, rects, frame) {
+      const support = rects.find((rect) => rect.id === rest.support);
+      return support
+        ? { x: support.left + rest.offset * frame.width, y: support.y }
+        : { x: rest.x * frame.width, y: rest.y * frame.height };
+    }
+
+    // A landed sword can be grabbed by a fighter standing beside it, or jumping up past it.
+    function nearbyThrownSword(player, rects, frame, now) {
+      const width = player.el.offsetWidth || frame.width * FIGHTER_WIDTH_FRACTION;
+      const height = player.el.offsetHeight || frame.height * FIGHTER_HEIGHT_FRACTION;
+      const center = player.x + width / 2;
+
+      return thrownSwords.find((sword) => {
+        const state = sword.fallen ? null : swordStateAt(sword, now);
+
+        if (!state?.resting) {
+          return false;
+        }
+
+        const anchor = restingSwordAnchor(state.segment, rects, frame);
+        return Math.abs(center - anchor.x) <= width * 1.1
+          && player.y >= anchor.y - height * .5
+          && player.y <= anchor.y + height * .8;
+      }) || null;
+    }
+
     function tryPickUpWeapon(playerIndex, now) {
       const player = players[playerIndex];
 
-      if (player.weapon === "sword") {
+      if (player.weapon === "sword" || player.isDead) {
         return false;
       }
 
       // For a guest's request the host checks where the guest was standing on its own screen.
       const view = multiplayerMatchActive() && multiplayer.isHost && playerIndex === multiplayer.remotePlayerIndex ? player.attackView : null;
-      const target = nearbyWeaponPlatform(view ? { ...player, x: view.x, y: view.y } : player, weaponPlatformRects(frameSize()));
+      const fighter = view ? { ...player, x: view.x, y: view.y } : player;
+      const frame = frameSize();
+      const target = nearbyWeaponPlatform(fighter, weaponPlatformRects(frame));
+      const thrown = target ? null : nearbyThrownSword(fighter, mapPlatformRects(platformClock(now)), frame, now);
 
-      if (!target) {
+      if (!target && !thrown) {
         return false;
       }
 
-      // A guest only predicts the pickup (so it doesn't swing); the host decides and reports back.
+      // A guest only predicts the pickup; the host decides and reports back.
       if (multiplayerMatchActive() && !multiplayer.isHost) {
         return true;
       }
 
-      target.weapon.takenAt = now;
+      if (target) {
+        target.weapon.takenAt = now;
+      } else {
+        thrownSwords.splice(thrownSwords.indexOf(thrown), 1);
+      }
+
       player.weapon = "sword";
-      nextWeaponSpawnAt = now + WEAPON_RESPAWN_DELAY_MIN + Math.random() * (WEAPON_RESPAWN_DELAY_MAX - WEAPON_RESPAWN_DELAY_MIN);
+      nextWeaponSpawnAt = Math.max(nextWeaponSpawnAt, now + WEAPON_RESPAWN_DELAY_MIN + Math.random() * (WEAPON_RESPAWN_DELAY_MAX - WEAPON_RESPAWN_DELAY_MIN));
       playPickupSound();
       sendMultiplayerState(true);
       return true;
@@ -2082,8 +2204,9 @@
         return false;
       }
 
-      // The attack key doubles as "pick up" when an unarmed fighter is at a sword.
-      if (tryPickUpWeapon(playerIndex, now)) {
+      // Locally the attack key doubles as "pick up" when an unarmed fighter is at a sword.
+      // Online games grab swords with their own key (E), so a click always swings.
+      if (!multiplayerMatchActive() && tryPickUpWeapon(playerIndex, now)) {
         return true;
       }
 
@@ -2111,6 +2234,247 @@
         player.el.classList.remove("is-attacking");
       }, attack.duration);
       return true;
+    }
+
+    // Thrown swords. A sword's path is a list of segments: ballistic flights (the throw, then a
+    // harmless tumble after it strikes a fighter or the arena's edge) and finally a rest, stuck in
+    // a platform. Positions are fractions of the frame with y measured up from the bottom, so every
+    // screen agrees on them, and any moment of the path can be worked out exactly. That is what
+    // lets each screen show the opponent's throws on its own timeline.
+    function swordLaunchPoint(player, frame) {
+      const round4 = (value) => Math.round(value * 10000) / 10000;
+      const facing = player.facing < 0 ? -1 : 1;
+      return {
+        x: round4(player.x / frame.width + FIGHTER_WIDTH_FRACTION * (.5 + facing * .75)),
+        y: round4(player.y / frame.height + FIGHTER_HEIGHT_FRACTION * .62),
+        facing
+      };
+    }
+
+    function launchSword({ id, owner, x, y, facing, at, viewLag = 0 }) {
+      const sword = {
+        id,
+        owner,
+        segments: [{ at, x, y, vx: facing * THROW_SPEED_PER_WIDTH, vy: THROW_LIFT_PER_HEIGHT, harmful: true, kind: "throw" }],
+        simAt: at,
+        createdAt: performance.now(),
+        // Online bookkeeping: whether the host has listed it, whether a guest may still predict
+        // its hits, and how far in the past the thrower's screen showed the opponent.
+        acked: false,
+        predictHits: true,
+        fallen: false,
+        viewLag,
+        // Drawing: when this screen first showed it leave the thrower's hand.
+        revealAt: 0,
+        revealLag: 0,
+        shownSegment: null
+      };
+      thrownSwords.push(sword);
+      return sword;
+    }
+
+    // The sword leaves the hand at once and the fighter is back to fists.
+    function throwSword(playerIndex) {
+      const player = players[playerIndex];
+      const now = performance.now();
+
+      if (!player || player.isDead || gameOver || roundResetTimer || player.isDashing || player.isAttacking || player.weapon !== "sword") {
+        return null;
+      }
+
+      const sword = launchSword({ id: playerIndex + 2 * nextThrowNumber, owner: playerIndex, ...swordLaunchPoint(player, frameSize()), at: now });
+      nextThrowNumber += 1;
+      player.weapon = "fists";
+      player.attackReadyAt = Math.max(player.attackReadyAt, now + THROW_RECOVERY);
+      sendMultiplayerState(true);
+      return sword;
+    }
+
+    function currentSwordSegment(sword, time) {
+      let segment = null;
+
+      sword.segments.forEach((candidate) => {
+        if (candidate.at <= time) {
+          segment = candidate;
+        }
+      });
+
+      return segment;
+    }
+
+    function swordFlightAt(segment, time) {
+      const seconds = Math.max(0, time - segment.at) / 1000;
+      return {
+        x: segment.x + segment.vx * seconds,
+        y: segment.y + segment.vy * seconds - GRAVITY_PER_HEIGHT * seconds * seconds / 2,
+        vx: segment.vx,
+        vy: segment.vy - GRAVITY_PER_HEIGHT * seconds,
+        segment
+      };
+    }
+
+    // Where a sword is at a given moment: flying, stuck in a platform, or (before the throw) nowhere.
+    function swordStateAt(sword, time) {
+      const segment = currentSwordSegment(sword, time);
+
+      if (!segment) {
+        return null;
+      }
+
+      return segment.resting ? { resting: true, segment } : swordFlightAt(segment, time);
+    }
+
+    // The point of the blade, half a sword's length ahead of its middle along the flight path.
+    function swordTip(flight, frame) {
+      const vx = flight.vx * frame.width;
+      const vy = flight.vy * frame.height;
+      const speed = Math.hypot(vx, vy) || 1;
+      return {
+        x: flight.x + vx / speed * THROWN_SWORD_HALF_LENGTH * frame.height / frame.width,
+        y: flight.y + vy / speed * THROWN_SWORD_HALF_LENGTH
+      };
+    }
+
+    // The highest platform whose top the point of the blade crossed on its way down.
+    function swordLanding(platforms, tipBefore, tipAfter) {
+      let landing = null;
+
+      platforms.forEach((platform) => {
+        if (tipBefore.y < platform.y || tipAfter.y > platform.y) {
+          return;
+        }
+
+        const share = tipBefore.y > tipAfter.y ? (tipBefore.y - platform.y) / (tipBefore.y - tipAfter.y) : 0;
+        const x = tipBefore.x + (tipAfter.x - tipBefore.x) * share;
+
+        if (x >= platform.left && x <= platform.right && (!landing || platform.y > landing.platform.y)) {
+          landing = { platform, share, x };
+        }
+      });
+
+      return landing;
+    }
+
+    // The fighter a flying sword is striking, if any. It never hits its thrower, a fighter who is
+    // down, or one dashing through it.
+    function swordStrikes(sword, flight, time, frame) {
+      const defenderIndex = sword.owner === 0 ? 1 : 0;
+      let defender = players[defenderIndex];
+
+      if (!defender || defender.isDead || defender.isDashing || defender.hp <= 0) {
+        return -1;
+      }
+
+      // Lag compensation: the host checks a guest's sword against where the guest's screen showed
+      // the host's fighter at that moment of the flight.
+      if (multiplayerMatchActive() && multiplayer.isHost && sword.owner === multiplayer.remotePlayerIndex && sword.viewLag) {
+        const seen = hostPositionAt(time - sword.viewLag);
+        defender = seen ? { ...defender, x: seen.x, y: seen.y } : defender;
+      }
+
+      const width = defender.el.offsetWidth || frame.width * FIGHTER_WIDTH_FRACTION;
+      const height = defender.el.offsetHeight || frame.height * FIGHTER_HEIGHT_FRACTION;
+      const x = flight.x * frame.width;
+      const y = flight.y * frame.height;
+      const overlaps = x + width * .45 > defender.x && x - width * .45 < defender.x + width
+        && y + height * .2 > defender.y && y - height * .2 < defender.y + height;
+      return overlaps ? defenderIndex : -1;
+    }
+
+    // Moves every thrown sword along to `now` in small steps: strikes (decided by the host or the
+    // local game; a guest predicts only its own), bounces off the arena's edges, sticking into
+    // platforms, and dropping into the void.
+    function updateThrownSwords(now, allowHits) {
+      if (!thrownSwords.length) {
+        return;
+      }
+
+      const frame = frameSize();
+      const decides = !multiplayerMatchActive() || multiplayer.isHost;
+      const platforms = mapPlatformRects(platformClock(now)).map((rect) => ({
+        id: rect.id,
+        left: rect.left / frame.width,
+        right: rect.right / frame.width,
+        y: rect.y / frame.height
+      }));
+
+      for (let index = thrownSwords.length - 1; index >= 0; index -= 1) {
+        const sword = thrownSwords[index];
+        let time = sword.simAt;
+
+        while (time < now && !sword.fallen) {
+          const segment = currentSwordSegment(sword, time);
+
+          if (!segment) {
+            time = Math.min(now, sword.segments[0]?.at ?? now);
+            continue;
+          }
+
+          if (segment.resting) {
+            // A sword stuck in a weapon platform falls again once the platform crumbles away.
+            if (segment.support && !platforms.some((platform) => platform.id === segment.support)) {
+              sword.segments.push({ at: now, x: segment.x, y: segment.y + THROWN_SWORD_HALF_LENGTH, vx: 0, vy: 0, harmful: false, kind: "drop" });
+            }
+
+            break;
+          }
+
+          const next = Math.min(now, time + THROWN_SWORD_STEP);
+          const before = swordFlightAt(segment, time);
+          const after = swordFlightAt(segment, next);
+
+          if (segment.harmful && allowHits && (decides || (sword.owner === multiplayer.localPlayerIndex && sword.predictHits))) {
+            const struck = swordStrikes(sword, after, next, frame);
+
+            if (struck >= 0) {
+              // Only the host (or the local game) deals damage; a guest just shows its sword glance off.
+              if (decides) {
+                damagePlayer(struck, THROWN_SWORD_DAMAGE);
+              }
+
+              sword.segments.push({ at: next, x: after.x, y: after.y, vx: -after.vx * .25, vy: THROWN_SWORD_BOUNCE, harmful: false, kind: "hit" });
+              sendMultiplayerState(true);
+              time = next;
+              continue;
+            }
+          }
+
+          if (after.x < .005 || after.x > .995) {
+            sword.segments.push({ at: next, x: clamp(after.x, .005, .995), y: after.y, vx: -after.vx * .3, vy: after.vy, harmful: false, kind: "wall" });
+            time = next;
+            continue;
+          }
+
+          const landing = after.vy < 0 ? swordLanding(platforms, swordTip(before, frame), swordTip(after, frame)) : null;
+
+          if (landing) {
+            const at = time + (next - time) * landing.share;
+            const flight = swordFlightAt(segment, at);
+            // Stuck point first and steeply enough to read as stuck, whatever angle it came down at.
+            const angle = clamp(Math.atan2(-flight.vy * frame.height, flight.vx * frame.width), .8, Math.PI - .8);
+            sword.segments.push({ at, resting: true, x: landing.x, y: landing.platform.y, angle, support: landing.platform.id, offset: landing.x - landing.platform.left });
+            sendMultiplayerState(true);
+            break;
+          }
+
+          if (after.y < -.2) {
+            if (decides) {
+              thrownSwords.splice(index, 1);
+              nextWeaponSpawnAt = Math.max(nextWeaponSpawnAt, now + WEAPON_FIRST_SPAWN_DELAY);
+              sendMultiplayerState(true);
+            } else {
+              sword.fallen = true;
+              sword.fallenAt = next;
+            }
+
+            break;
+          }
+
+          time = next;
+        }
+
+        sword.simAt = now;
+      }
     }
 
     // Round and full-match reset helpers.
@@ -2490,6 +2854,15 @@
 
     function roundTripEstimate() {
       return multiplayer.roundTrips.length ? Math.min(...multiplayer.roundTrips) : 0;
+    }
+
+    function oneWayEstimate() {
+      return Math.min(roundTripEstimate() / 2, 150);
+    }
+
+    // A moment on the opponent's clock, on this page's clock. Needs clockDelta (see trackRemoteTiming).
+    function remoteToLocalTime(remoteTime) {
+      return remoteTime + multiplayer.clockDelta - oneWayEstimate();
     }
 
     // Moving platforms run on the host's clock on both screens. The guest estimates that clock
@@ -2911,14 +3284,19 @@
       input[direction] = pressed;
     }
 
-    // A guest's swing (or pickup) request. The host remembers where the guest stood and which
-    // moment of the host's timeline the guest's screen showed, to judge the swing fairly.
+    // A guest's swing, pickup, or throw. For swings and pickups the host remembers where the guest
+    // stood and which moment of the host's timeline the guest's screen showed, to judge them fairly.
     function handleMultiplayerInput({ from, data }) {
       if (!multiplayer.isHost || multiplayer.status !== "playing" || from !== multiplayer.remotePeerId) {
         return;
       }
 
-      if (data?.kind !== "action" || data.action !== "attack") {
+      if (data?.kind !== "action" || !["attack", "pickup", "throw"].includes(data.action)) {
+        return;
+      }
+
+      if (data.action === "throw") {
+        acceptGuestThrow(data);
         return;
       }
 
@@ -2932,26 +3310,66 @@
           facing: data.f < 0 ? -1 : 1
         }
         : null;
-      startAttack(index);
+
+      if (data.action === "pickup") {
+        tryPickUpWeapon(index, performance.now());
+      } else {
+        startAttack(index);
+      }
     }
 
-    function sendGuestAttack() {
+    // The guest's sword is already flying on the guest's screen. The host flies its own copy from
+    // the same spot and the same moment (converted to the host's clock), and judges its strikes
+    // against where the guest's screen showed the host's fighter.
+    function acceptGuestThrow(data) {
+      const index = multiplayer.remotePlayerIndex;
+      const player = players[index];
+      const now = performance.now();
+
+      if (data.r !== multiplayer.round || player.isDead || player.weapon !== "sword" || gameOver || roundResetTimer) {
+        return;
+      }
+
+      if (typeof data.id !== "number" || data.id % 2 !== index || thrownSwords.some((sword) => sword.id === data.id) || typeof data.x !== "number" || typeof data.y !== "number") {
+        return;
+      }
+
+      const launchedAt = multiplayer.clockDelta !== null && typeof data.t === "number"
+        ? clamp(remoteToLocalTime(data.t), now - MULTIPLAYER_LAG_COMPENSATION_MAX, now)
+        : now - oneWayEstimate();
+      const viewLag = typeof data.view === "number" ? clamp(launchedAt - data.view, 0, MULTIPLAYER_LAG_COMPENSATION_MAX) : 0;
+      launchSword({ id: data.id, owner: index, x: data.x, y: data.y, facing: data.f < 0 ? -1 : 1, at: launchedAt, viewLag });
+      player.weapon = "fists";
+      player.attackReadyAt = Math.max(player.attackReadyAt, launchedAt + THROW_RECOVERY);
+      sendMultiplayerState(true);
+    }
+
+    // The moment of the host's timeline this screen is showing (see updateRemoteFighter).
+    function guestView() {
+      return multiplayer.clockDelta === null ? null : performance.now() - multiplayer.clockDelta - multiplayer.interpDelay - multiplayer.stallBuffer;
+    }
+
+    function sendGuestAction(action, extra = {}) {
       const player = players[multiplayer.localPlayerIndex];
       const frame = frameSize();
-      // The moment of the host's timeline this screen is showing (see updateRemoteFighter).
-      const view = multiplayer.clockDelta === null ? null : performance.now() - multiplayer.clockDelta - multiplayer.interpDelay - multiplayer.stallBuffer;
       sendToOpponent("input", {
         kind: "action",
-        action: "attack",
-        view,
+        action,
+        view: guestView(),
         x: player.x / frame.width,
         y: player.y / frame.height,
-        f: player.facing < 0 ? -1 : 1
+        f: player.facing < 0 ? -1 : 1,
+        ...extra
       });
     }
 
+    function sendGuestThrow(sword) {
+      const launch = sword.segments[0];
+      sendGuestAction("throw", { id: sword.id, t: launch.at, x: launch.x, y: launch.y, f: launch.vx < 0 ? -1 : 1, r: multiplayer.round });
+    }
+
     // Each player moves their own fighter on their own screen, so controls respond instantly.
-    // Only swings and pickups go through the host, which decides hits, damage, and weapons.
+    // Swings, pickups, and throws go through the host, which decides hits, damage, and weapons.
     function handleMultiplayerKeyDown(event) {
       if (!multiplayerMatchActive() || !MULTIPLAYER_CONTROL_KEYS.has(event.code)) {
         return false;
@@ -2971,15 +3389,48 @@
 
       if (event.code === MULTIPLAYER_KEYS.jump) {
         startJump(playerIndex);
-      } else if (event.code === MULTIPLAYER_KEYS.attack) {
-        if (startAttack(playerIndex) && !multiplayer.isHost) {
-          sendGuestAttack();
+      } else if (event.code === MULTIPLAYER_KEYS.pickUp) {
+        // A guest asks only when its own screen shows a sword in reach.
+        if (tryPickUpWeapon(playerIndex, performance.now()) && !multiplayer.isHost) {
+          sendGuestAction("pickup");
         }
       } else if (event.code === MULTIPLAYER_KEYS.dash || event.code === MULTIPLAYER_KEYS.dashAlternate) {
         startDash(playerIndex);
       }
 
       return true;
+    }
+
+    // Online the mouse fights: the left button attacks and the right button throws the sword.
+    function handleMultiplayerMouseDown(event) {
+      const action = event.button === MULTIPLAYER_MOUSE_BUTTONS.attack ? "attack" : event.button === MULTIPLAYER_MOUSE_BUTTONS.throw ? "throw" : "";
+      const targetElement = event.target instanceof Element ? event.target : null;
+
+      if (!action || !multiplayerMatchActive() || targetElement?.closest("button, input, textarea, a")) {
+        return;
+      }
+
+      event.preventDefault();
+
+      if (uiBlocksGameInput()) {
+        return;
+      }
+
+      const playerIndex = multiplayer.localPlayerIndex;
+
+      if (action === "attack") {
+        if (startAttack(playerIndex) && !multiplayer.isHost) {
+          sendGuestAction("attack");
+        }
+
+        return;
+      }
+
+      const sword = throwSword(playerIndex);
+
+      if (sword && !multiplayer.isHost) {
+        sendGuestThrow(sword);
+      }
     }
 
     function handleMultiplayerKeyUp(event) {
@@ -3047,8 +3498,111 @@
         dd: players.map((player) => (player.isDead ? 1 : 0)),
         wp: players.map((player) => player.weapon),
         ws: weaponPlatforms.map((weapon) => [weapon.id, round4(weapon.left), round4(weapon.y), Math.round(now - weapon.spawnedAt), weapon.takenAt ? Math.round(now - weapon.takenAt) : -1]),
+        ts: thrownSwords.map((sword) => serializeSword(sword, now)),
         ui: [currentMap.id, roundLabel.textContent, winnerBanner.classList.contains("is-hidden") ? 0 : 1, winnerMessage.textContent]
       });
+    }
+
+    // A thrown sword for the guest: its current segment and, while the throw is recent, its first
+    // one, so a guest that missed the throw itself can still show the sword leave the hand.
+    // Flight: [id, 0 harmful or 1 harmless, x, y, age, vx, vy, kind, first]
+    // Rest:   [id, 2, x, y, age, angle, support, offset, first]
+    const SWORD_SEGMENT_KINDS = ["throw", "hit", "wall", "drop"];
+
+    function serializeSword(sword, now) {
+      const round4 = (value) => Math.round(value * 10000) / 10000;
+      const launch = sword.segments[0];
+      const segment = currentSwordSegment(sword, now) || launch;
+      const age = Math.round(now - segment.at);
+      const first = segment !== launch && now - launch.at < 2000
+        ? [round4(launch.x), round4(launch.y), Math.round(now - launch.at), round4(launch.vx), round4(launch.vy)]
+        : 0;
+
+      if (segment.resting) {
+        return [sword.id, 2, round4(segment.x), round4(segment.y), age, Math.round(segment.angle * 100) / 100, segment.support || "", round4(segment.offset), first];
+      }
+
+      return [sword.id, segment.harmful ? 0 : 1, round4(segment.x), round4(segment.y), age, round4(segment.vx), round4(segment.vy), SWORD_SEGMENT_KINDS.indexOf(segment.kind), first];
+    }
+
+    function sameSwordSegment(a, b) {
+      if (Boolean(a.resting) !== Boolean(b.resting)) {
+        return false;
+      }
+
+      if (a.resting) {
+        return Math.abs(a.x - b.x) < .03 && Math.abs(a.y - b.y) < .03;
+      }
+
+      return a.harmful === b.harmful && Math.abs(a.at - b.at) < 80 && Math.abs(a.x - b.x) < .03 && Math.abs(a.y - b.y) < .04;
+    }
+
+    // Guest: line the thrown swords up with the host's. The host's word is final, but its updates
+    // trail this screen, which flies its own throws and predicts landings right away. So an update
+    // only overrules this screen where it disagrees about a moment, or where the host is already
+    // past a moment at which this screen predicted something the host never saw.
+    function syncThrownSwords(entries, sentAt, now) {
+      if (multiplayer.clockDelta === null || typeof sentAt !== "number") {
+        return;
+      }
+
+      const hostNow = Math.min(now, remoteToLocalTime(sentAt));
+      const listed = new Set();
+
+      entries.forEach((entry) => {
+        const [id, phase, x, y, age, , , , launch] = entry;
+        const segment = phase === 2
+          ? { at: hostNow - age, resting: true, x, y, angle: entry[5], support: entry[6] || null, offset: entry[7] }
+          : { at: hostNow - age, x, y, vx: entry[5], vy: entry[6], harmful: phase === 0, kind: SWORD_SEGMENT_KINDS[entry[7]] || "throw" };
+        let sword = thrownSwords.find((candidate) => candidate.id === id);
+        listed.add(id);
+
+        if (!sword) {
+          const segments = launch ? [{ at: hostNow - launch[2], x: launch[0], y: launch[1], vx: launch[3], vy: launch[4], harmful: true, kind: "throw" }, segment] : [segment];
+          thrownSwords.push({ id, owner: id % 2, segments, simAt: segment.at, createdAt: now, acked: true, predictHits: false, fallen: false, viewLag: 0, revealAt: 0, revealLag: 0, shownSegment: null });
+          return;
+        }
+
+        sword.acked = true;
+        const match = sword.segments.find((candidate) => sameSwordSegment(candidate, segment));
+
+        if (match) {
+          // A rest takes the host's exact spot.
+          if (segment.resting) {
+            Object.assign(match, segment);
+            return;
+          }
+
+          const later = sword.segments.find((candidate) => candidate.at > match.at);
+          const predictedAt = Math.min(later ? later.at : Infinity, sword.fallen ? sword.fallenAt : Infinity);
+
+          if (predictedAt < hostNow - THROWN_SWORD_SYNC_SLACK) {
+            sword.segments = sword.segments.filter((candidate) => candidate.at <= match.at);
+            sword.fallen = false;
+            sword.predictHits = false;
+            sword.simAt = hostNow;
+          }
+
+          return;
+        }
+
+        // A real disagreement: take the host's version from that moment on and fly on from there.
+        sword.segments = sword.segments.filter((candidate) => candidate.at < segment.at);
+        sword.segments.push(segment);
+        sword.fallen = false;
+        sword.predictHits = false;
+        sword.simAt = segment.at;
+      });
+
+      // Swords the host no longer lists were picked up or fell into the void. One this screen
+      // threw that the host never listed was turned down (or lost on the way), so it goes too.
+      for (let index = thrownSwords.length - 1; index >= 0; index -= 1) {
+        const sword = thrownSwords[index];
+
+        if (!listed.has(sword.id) && (sword.acked || now - sword.createdAt > THROW_ACK_TIMEOUT)) {
+          thrownSwords.splice(index, 1);
+        }
+      }
     }
 
     // Guest -> host: the guest fighter's own motion. A fighter standing still only resends now and then.
@@ -3120,13 +3674,16 @@
       (data.ws || []).forEach(([id, left, y, age, takenAge]) => {
         weaponPlatforms.push({ id, left, y, spawnedAt: now - age, takenAt: takenAge >= 0 ? now - takenAge : 0 });
       });
+      syncThrownSwords(data.ts || [], data.t, now);
 
       // Health, lives, deaths, and weapons belong to the host. Only touch the page when they change.
       players.forEach((player, index) => {
         const hp = data.hp?.[index] ?? player.hp;
         const lives = data.lv?.[index] ?? player.lives;
         const dead = Boolean(data.dd?.[index]);
-        const weapon = data.wp?.[index] || "fists";
+        // Until the host has seen this screen's throw, its updates still show the sword in hand.
+        const throwPending = thrownSwords.some((sword) => sword.owner === index && !sword.acked);
+        const weapon = throwPending ? player.weapon : data.wp?.[index] || "fists";
 
         if (weapon === "sword" && player.weapon !== "sword") {
           playPickupSound();
@@ -3454,6 +4011,14 @@
       event.preventDefault();
     });
 
+    // Mouse buttons fight in online matches, where the right button must not open the browser menu.
+    window.addEventListener("mousedown", handleMultiplayerMouseDown);
+    window.addEventListener("contextmenu", (event) => {
+      if (multiplayerMatchActive()) {
+        event.preventDefault();
+      }
+    });
+
     // Button and form event wiring.
     replayButton.addEventListener("click", resetMatch);
     singleplayerButton.addEventListener("click", () => showMapSelect());
@@ -3538,10 +4103,16 @@
       syncPlatformClock();
       const clock = platformClock(now);
 
-      // Menus and round breaks only render; online, the opponent keeps easing into place.
+      // Menus and round breaks only render; online, the opponent keeps easing into place. A sword
+      // already in the air still finishes its flight, but can't hurt anyone.
       if (uiBlocksGameInput()) {
         if (online) {
           updateRemoteFighter(now, mapPlatformRects(clock));
+        }
+
+        updateThrownSwords(now, false);
+
+        if (online) {
           sendMultiplayerState();
         }
 
@@ -3593,6 +4164,8 @@
           killPlayer(index);
         }
       });
+
+      updateThrownSwords(now, true);
 
       if (online && multiplayer.isHost) {
         recordHostHistory(now);
@@ -3736,6 +4309,13 @@
       dash: [
         { head: [3, -35], chest: [4, -23], waist: [0, -18], front: [[1, -16], [8, -11], [11, -3]], back: [[-1, -16], [-6, -9], [-12, -5]],
           armF: [[4, -25], [1, -20], [-3, -17]], armB: [[2, -25], [-2, -21], [-6, -19]], sword: 165, scarf: 3 }
+      ],
+      // The sword has just left the hand: a lunge with the throwing arm flung out, then the follow-through.
+      throw: [
+        { head: [3, -39], chest: [5, -26], waist: [2, -20], front: [[4, -17], [11, -10], [14, -1]], back: [[1, -17], [-4, -10], [-10, -1]],
+          armF: [[7, -28], [13, -30], [19, -32]], armB: [[3, -28], [-2, -25], [-7, -22]], sword: 0, scarf: 2 },
+        { head: [1, -40], chest: [3, -27], waist: [1, -21], front: [[3, -18], [9, -10], [11, -1]], back: [[0, -18], [-4, -10], [-9, -1]],
+          armF: [[5, -29], [10, -25], [14, -21]], armB: [[1, -29], [-3, -28], [-6, -32]], sword: 0, scarf: 1 }
       ],
       rise: [
         { head: [-2, -42], chest: [1, -29], waist: [0, -23], front: [[1, -20], [6, -15], [3, -9]], back: [[-1, -20], [-3, -14], [-7, -10]],
@@ -4029,6 +4609,7 @@
       particles: [],
       afterimages: [],
       pickupSword: null,
+      looseSwords: new Map(),
       seenWeapons: new Set(),
       shake: 0,
       flash: 0,
@@ -4045,6 +4626,7 @@
       airJumpsUsed: 0,
       weapon: "fists",
       attackStart: -Infinity,
+      throwStart: -Infinity,
       hitStart: -Infinity,
       deadStart: -Infinity,
       lastAfterimageAt: 0
@@ -4951,10 +5533,17 @@
       ctx.restore();
     }
 
-    // A swing keeps the weapon it started with, even if a sword is grabbed mid-punch.
-    function fighterIsArmed(player) {
+    // A swing keeps the weapon it started with, even if a sword is grabbed mid-punch. A thrown
+    // sword stays in the hand until this screen shows the throw (see thrownSwordViews).
+    function fighterIsArmed(player, index) {
+      if (thrownSwords.some((sword) => sword.owner === index && !sword.revealAt && !sword.fallen)) {
+        return true;
+      }
+
       return (player.isAttacking ? player.attackWeapon : player.weapon) === "sword";
     }
+
+    const THROW_POSE_TIME = 260;
 
     function fighterPose(player, fx, now) {
       if (player.isDead) {
@@ -4967,6 +5556,10 @@
 
       if (player.isDashing) {
         return ["dash", 0];
+      }
+
+      if (now - fx.throwStart < THROW_POSE_TIME) {
+        return ["throw", now - fx.throwStart < 110 ? 0 : 1];
       }
 
       if (player.isAttacking) {
@@ -5037,13 +5630,21 @@
           spawnDust(point.x - player.facing * 3, point.y - 1, art.dust, -player.facing);
         }
 
+        // The size of the hit sets the burst: a punch, a sword swing, or a thrown sword.
         if (player.hp < fx.hp) {
           const attacker = players[1 - index];
           const away = player.x >= attacker.x ? 1 : -1;
-          const heavy = attacker.attackWeapon === "sword";
+          const damage = fx.hp - player.hp;
+          const heavy = damage >= 15;
+          const crushing = damage >= 40;
           fx.hitStart = now;
-          spawnParticles({ x: point.x - away * 3, y: point.y - 25, count: heavy ? 14 : 7, colors: ["#ffffff", "#fff2a8", "#ffbe4a", "#ff7b3a"], speed: heavy ? [50, 140] : [35, 90], angle: away > 0 ? -.35 : Math.PI + .35, spread: 1.7, gravity: 260, life: [.18, .42] });
-          scene.shake = Math.max(scene.shake, heavy ? 3 : 1.5);
+          spawnParticles({ x: point.x - away * 3, y: point.y - 25, count: crushing ? 24 : heavy ? 14 : 7, colors: ["#ffffff", "#fff2a8", "#ffbe4a", "#ff7b3a"], speed: crushing ? [70, 190] : heavy ? [50, 140] : [35, 90], angle: away > 0 ? -.35 : Math.PI + .35, spread: crushing ? 2.4 : 1.7, gravity: 260, life: [.18, crushing ? .55 : .42] });
+          scene.shake = Math.max(scene.shake, crushing ? 5 : heavy ? 3 : 1.5);
+
+          if (crushing) {
+            scene.flash = Math.max(scene.flash, .16);
+            playImpactSound("hit");
+          }
         }
 
         if (player.isDead && !fx.isDead) {
@@ -5140,7 +5741,7 @@
       const [pose, poseFrame] = fighterPose(player, fx, now);
       const scarfPhase = Math.floor(now / 130) % 4;
       const facing = player.facing < 0 ? -1 : 1;
-      const armed = fighterIsArmed(player);
+      const armed = fighterIsArmed(player, index);
       const sprite = fighterSprite(index, pose, poseFrame, scarfPhase, armed, now - fx.hitStart < 70 ? "flash" : "");
 
       if (player.isDashing && now - fx.lastAfterimageAt > 28) {
@@ -5242,6 +5843,168 @@
       });
     }
 
+    // Loose swords (flying, or stuck where they landed) are drawn at any of 32 angles around the
+    // middle of a 33-pixel sprite. drawSword runs from the pommel, 2 pixels behind the hand, to the
+    // point, so the middle of the sword sits (SWORD_LENGTH - 2) / 2 ahead of the hand.
+    const LOOSE_SWORD_MIDDLE = (SWORD_LENGTH - 2) / 2;
+
+    function looseSwordSprite(owner, angle) {
+      const step = ((Math.round(angle / (Math.PI * 2) * 32) % 32) + 32) % 32;
+      const key = `${owner}|${step}`;
+      let sprite = scene.looseSwords.get(key);
+
+      if (!sprite) {
+        const radians = step / 32 * Math.PI * 2;
+        const buffer = createPixelBuffer(33, 33);
+        const hand = [Math.round(16 - Math.cos(radians) * LOOSE_SWORD_MIDDLE), Math.round(16 - Math.sin(radians) * LOOSE_SWORD_MIDDLE)];
+        drawSword(buffer, FIGHTER_PALETTES[owner], hand, step * 360 / 32, SWORD_LENGTH);
+        const layer = createLayer(33, 33);
+        layer.ctx.putImageData(buffer.image, 0, 0);
+        sprite = layer.canvas;
+        scene.looseSwords.set(key, sprite);
+      }
+
+      return sprite;
+    }
+
+    // The moment of a thrown sword's path this screen shows. A player's own throws show as they
+    // happen. The opponent's start on the same delay as the opponent's fighter, so the sword
+    // leaves their hand as they throw on this screen, then catch up with the present over a
+    // moment, so a strike shows when it actually lands. (A guest stays one trip behind the host,
+    // as fresh as its news of a strike can be.)
+    function swordDisplayTime(sword, now) {
+      if (!multiplayerMatchActive() || sword.owner === multiplayer.localPlayerIndex) {
+        return { time: now, lag: 0 };
+      }
+
+      const base = multiplayer.isHost ? 0 : oneWayEstimate();
+      const fighterLag = multiplayer.interpDelay + multiplayer.stallBuffer + (multiplayer.isHost ? oneWayEstimate() : 0);
+
+      if (!sword.revealAt) {
+        return { time: now - base - fighterLag, lag: fighterLag };
+      }
+
+      return { time: now - base - sword.revealLag * Math.max(0, 1 - (now - sword.revealAt) / THROWN_SWORD_CATCH_UP), lag: sword.revealLag };
+    }
+
+    // Where each thrown sword is drawn this frame (in scene pixels), plus the effects for what the
+    // screen now shows: the throw itself, a sword glancing off, and a sword sticking in.
+    function thrownSwordViews(now, frame, rects, width, art) {
+      const views = [];
+      const sparks = ["#ffffff", "#fff2a8", "#ffbe4a"];
+
+      thrownSwords.forEach((sword) => {
+        if (sword.fallen) {
+          return;
+        }
+
+        const { time, lag } = swordDisplayTime(sword, now);
+        const state = swordStateAt(sword, time);
+
+        // Not thrown yet on this screen: the sword is still in the thrower's hand.
+        if (!state) {
+          return;
+        }
+
+        if (!sword.revealAt) {
+          const launch = sword.segments[0];
+          sword.revealAt = now;
+          sword.revealLag = lag;
+
+          if (!launch.resting && time - launch.at < 250) {
+            fighterFx[sword.owner].throwStart = now - (time - launch.at);
+            playSwingSound("sword", .8);
+          }
+        }
+
+        const segment = state.segment;
+        let view;
+
+        if (state.resting) {
+          const anchor = restingSwordAnchor(segment, rects, frame);
+          view = { sword, resting: true, x: anchor.x / frame.width * width, y: (1 - anchor.y / frame.height) * SCENE_HEIGHT, angle: segment.angle };
+        } else {
+          const toScene = (flight) => ({ x: flight.x * width, y: (1 - flight.y) * SCENE_HEIGHT });
+          const point = toScene(state);
+          // A thrown sword flies point first, tipping down as it falls. One that glanced off tumbles.
+          const spin = (segment.vx < 0 ? -1 : 1) * 14 * (time - segment.at) / 1000;
+          const angle = segment.harmful
+            ? Math.atan2(-state.vy * frame.height, state.vx * frame.width)
+            : Math.atan2(-segment.vy * frame.height, segment.vx * frame.width || 1) + spin;
+          view = {
+            sword,
+            resting: false,
+            ...point,
+            angle,
+            trail: segment.harmful ? [toScene(swordFlightAt(segment, Math.max(segment.at, time - 90))), toScene(swordFlightAt(segment, Math.max(segment.at, time - 45)))] : null
+          };
+        }
+
+        if (sword.shownSegment !== segment) {
+          const firstLook = !sword.shownSegment;
+          sword.shownSegment = segment;
+
+          if (!firstLook && segment.resting) {
+            spawnDust(view.x, view.y - 1, art.dust, 0);
+            spawnParticles({ x: view.x, y: view.y - 2, count: 6, colors: sparks, speed: [30, 80], angle: -Math.PI / 2, spread: 2.2, gravity: 220, life: [.12, .3] });
+            playImpactSound("stick");
+          } else if (!firstLook && (segment.kind === "hit" || segment.kind === "wall")) {
+            spawnParticles({ x: view.x, y: view.y, count: 9, colors: sparks, speed: [40, 110], angle: segment.vx < 0 ? Math.PI : 0, spread: 2.6, gravity: 240, life: [.12, .32] });
+
+            if (segment.kind === "wall") {
+              playImpactSound("clang");
+            }
+          }
+        }
+
+        views.push(view);
+      });
+
+      return views;
+    }
+
+    // Stuck swords sit behind the fighters, point buried in the platform: the platform's top edge
+    // hides the last few pixels of the blade. A faint glow and a glint mark them as up for grabs.
+    function drawRestingSwords(ctx, views, t) {
+      views.filter((view) => view.resting).forEach((view) => {
+        const dirX = Math.cos(view.angle);
+        const dirY = Math.sin(view.angle);
+        const buried = 3;
+        const middleX = Math.round(view.x + dirX * (buried - SWORD_LENGTH + LOOSE_SWORD_MIDDLE));
+        const middleY = Math.round(view.y + dirY * (buried - SWORD_LENGTH + LOOSE_SWORD_MIDDLE));
+        const glint = (t * 1000 + view.sword.id * 377) % 1700;
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(-8, -8, ctx.canvas.width + 16, Math.round(view.y) + 9);
+        ctx.clip();
+        ditherDisc(ctx, middleX, middleY, 7, "#ffd76a", .14 + Math.sin(t * 4 + view.sword.id) * .05);
+        ctx.drawImage(looseSwordSprite(view.sword.owner, view.angle), middleX - 16, middleY - 16);
+
+        if (glint < 220) {
+          const along = glint / 220 * 16 - 8;
+          fillPixels(ctx, middleX + dirX * along, middleY + dirY * along, 1, 1, "#ffffff");
+        }
+
+        ctx.restore();
+      });
+    }
+
+    // Flying swords go in front of the fighters, with a fading streak along their path.
+    function drawFlyingSwords(ctx, views) {
+      views.filter((view) => !view.resting).forEach((view) => {
+        if (view.trail) {
+          const [far, near] = view.trail;
+          ctx.globalAlpha = .35;
+          pixelLine(ctx, far.x, far.y, near.x, near.y, "#ffffff");
+          ctx.globalAlpha = .75;
+          pixelLine(ctx, near.x, near.y, view.x, view.y, "#ffffff");
+          ctx.globalAlpha = 1;
+        }
+
+        ctx.drawImage(looseSwordSprite(view.sword.owner, view.angle), Math.round(view.x) - 16, Math.round(view.y) - 16);
+      });
+    }
+
     // Tiny pixel key caps: "E", and a return arrow for Player 2's Enter key in local play.
     const KEY_GLYPHS = {
       E: ["###", "#..", "##.", "#..", "###"],
@@ -5267,26 +6030,32 @@
       });
     }
 
-    // Shows the pickup key over a sword whenever a fighter on this screen is close enough to grab it.
-    function drawPickupPrompts(ctx, rects, platforms, t) {
+    // Shows the pickup key over a sword whenever a fighter on this screen is close enough to grab
+    // it, whether the sword floats over a weapon platform or is stuck where it was thrown.
+    function drawPickupPrompts(ctx, rects, platforms, swordViews, frame, now, t) {
       const online = multiplayerMatchActive();
       const candidates = online ? [multiplayer.localPlayerIndex] : [0, 1];
       const prompts = candidates
         .filter((index) => !players[index].isDead && players[index].weapon !== "sword")
-        .map((index) => ({ index, target: nearbyWeaponPlatform(players[index], rects) }))
-        .filter((prompt) => prompt.target);
+        .map((index) => {
+          const target = nearbyWeaponPlatform(players[index], rects);
+          const platform = target && platforms.find((candidate) => candidate.weapon === target.weapon);
 
-      prompts.forEach(({ index, target }) => {
-        const platform = platforms.find((candidate) => candidate.weapon === target.weapon);
+          // Above head height, so the prompt stays readable while a fighter stands on the platform.
+          if (platform) {
+            return { index, key: target.weapon, x: platform.x + platform.w / 2, bottom: platform.y - 46 };
+          }
 
-        if (!platform) {
-          return;
-        }
+          const sword = nearbyThrownSword(players[index], rects, frame, now);
+          const view = sword && swordViews.find((candidate) => candidate.sword === sword && candidate.resting);
+          return view ? { index, key: sword, x: view.x, bottom: view.y - 46 } : null;
+        })
+        .filter(Boolean);
 
-        const shared = prompts.filter((prompt) => prompt.target === target).length > 1;
-        const offset = shared ? (index === 0 ? -7 : 7) : 0;
-        // Above head height, so the prompt stays readable while a fighter stands on the platform.
-        drawKeyPrompt(ctx, platform.x + platform.w / 2 + offset, platform.y - 46, online || index === 0 ? "E" : "enter", t);
+      prompts.forEach((prompt) => {
+        const shared = prompts.filter((other) => other.key === prompt.key).length > 1;
+        const offset = shared ? (prompt.index === 0 ? -7 : 7) : 0;
+        drawKeyPrompt(ctx, prompt.x + offset, prompt.bottom, online || prompt.index === 0 ? "E" : "enter", t);
       });
     }
 
@@ -5366,20 +6135,25 @@
       art.drawBackground(ctx, t);
       let rects = [];
       let platforms = [];
+      let swordViews = [];
 
       if (playing) {
         rects = mapPlatformRects(platformClock(now));
         platforms = scenePlatforms(rects, frame, scale);
+        // Worked out before the fighters, who keep a thrown sword in hand until it shows here.
+        swordViews = thrownSwordViews(now, frame, rects, width, art);
         art.drawPlatforms(ctx, platforms.filter((platform) => !platform.weapon), t);
         drawWeaponPlatforms(ctx, platforms.filter((platform) => platform.weapon), now, t);
+        drawRestingSwords(ctx, swordViews, t);
         drawFighters(ctx, now, frame, scale, platforms, art);
+        drawFlyingSwords(ctx, swordViews);
         drawParticles(ctx);
       }
 
       art.drawForeground(ctx, t);
 
       if (playing) {
-        drawPickupPrompts(ctx, rects, platforms, t);
+        drawPickupPrompts(ctx, rects, platforms, swordViews, frame, now, t);
       }
 
       ctx.setTransform(1, 0, 0, 1, 0, 0);
