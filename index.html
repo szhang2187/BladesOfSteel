@@ -743,8 +743,9 @@
       </div>
       <div class="help-panel is-hidden" data-help-panel="multi">
         <p><strong>Multiplayer:</strong> Each player uses these controls on their own computer.</p>
-        <p>A and D move, Space jumps, Space again double jumps, E attacks, and R dashes forward.</p>
-        <p>Each sword hit deals 20 damage. Dashing briefly makes you invulnerable.</p>
+        <p>A and D move, Space jumps, Space again double jumps, E attacks, and Q dashes forward.</p>
+        <p><strong>Dash:</strong> You can't be hit while dashing, so use Q to slip through an attack.</p>
+        <p>Each sword hit deals 20 damage.</p>
       </div>
       <button class="menu-button help-back-button" type="button">Back</button>
     </section>
@@ -809,7 +810,7 @@
       <div class="match-found-box is-hidden">Match Found!</div>
       <div class="matchmaking-panel">
         <p class="matchmaking-status">Connecting to the multiplayer network...</p>
-        <p><strong>Controls:</strong> A and D move, Space jumps, E attacks, and R dashes forward.</p>
+        <p><strong>Controls:</strong> A and D move, Space jumps, E attacks, and Q dashes forward through attacks.</p>
         <p>Win by taking all three lives from your opponent.</p>
         <button class="menu-button cancel-matchmaking-button" type="button">Cancel</button>
       </div>
@@ -967,12 +968,14 @@
     ];
 
     // Multiplayer uses the same control keys for each player on their own device.
+    // Q dashes; R still works so players who learned the old key are not caught out.
     const MULTIPLAYER_KEYS = {
       left: "KeyA",
       right: "KeyD",
       jump: "Space",
       attack: "KeyE",
-      dash: "KeyR"
+      dash: "KeyQ",
+      dashAlternate: "KeyR"
     };
     const MULTIPLAYER_CONTROL_KEYS = new Set(Object.values(MULTIPLAYER_KEYS));
 
@@ -2531,7 +2534,8 @@
         } else {
           sendLocalMultiplayerInput({ kind: "action", action: "attack" });
         }
-      } else if (event.code === MULTIPLAYER_KEYS.dash) {
+      } else if (event.code === MULTIPLAYER_KEYS.dash || event.code === MULTIPLAYER_KEYS.dashAlternate) {
+        // The host runs the dash, so a guest's dash is invulnerable on the authoritative simulation too.
         if (multiplayer.isHost) {
           startDash(playerIndex);
         } else {

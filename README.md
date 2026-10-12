@@ -52,7 +52,7 @@ Each player uses the same controls on their own computer:
 - Jump: `Space`
 - Double jump: press `Space` again in the air
 - Attack: `E`
-- Dash: `R`
+- Dash: `Q` (`R` also works). You can't be hit during a dash, so it's how you slip through an attack.
 
 ## How To Win
 
