@@ -1,0 +1,30 @@
+name: Publish site
+
+# GitHub Pages serves this site from the gh-pages branch. Keep that branch in step
+# with main so every push to main goes live without a manual step.
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: publish-site
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out main
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # A fast-forward only: if gh-pages ever gets commits of its own, this fails loudly
+      # instead of overwriting them.
+      - name: Fast-forward gh-pages to main
+        run: git push origin HEAD:refs/heads/gh-pages

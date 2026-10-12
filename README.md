@@ -79,6 +79,10 @@ Troubleshooting:
 - Add `?net=relay` or `?net=direct` to the page URL to test one path at a time. Both players must use the same setting.
 - To let more players use the direct link, add TURN servers to `MULTIPLAYER_TURN_SERVERS` in `index.html`, for example from a free Metered or ExpressTURN account.
 
+## Publishing
+
+GitHub Pages serves the site from the `gh-pages` branch. The `Publish site` workflow in `.github/workflows/publish-gh-pages.yml` fast-forwards `gh-pages` to `main` on every push. Pushing to `main` puts the game live within a minute or two.
+
 ## Run Locally
 
 Open `index.html` in a browser, or start a local server from the project folder:
