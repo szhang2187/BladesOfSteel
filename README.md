@@ -11,7 +11,7 @@ https://szhang2187.github.io/BladesOfSteel/
 ## Features
 
 - Local two-player sword combat
-- Peer-to-peer multiplayer lobbies with 4 digit join codes
+- Online multiplayer lobbies with 4 digit join codes that work across devices and networks
 - HP bars and three-life match system
 - Sword attacks, dashing, jump, and double jump
 - Dash invulnerability
@@ -59,7 +59,12 @@ Each player starts with 100 HP and three lives. Sword hits deal 20 damage. When 
 
 ## Multiplayer Notes
 
-Multiplayer uses browser peer-to-peer networking through Trystero. The site can stay hosted on GitHub Pages, while the active match data is sent directly between players' browsers. The game also includes STUN/TURN ICE server configuration to help players connect across separate networks.
+Multiplayer works between any two devices with a browser and an internet connection, on different networks too. The site stays hosted on GitHub Pages with no game server. Each lobby uses two connection paths at once:
+
+- **Relay:** public MQTT brokers (HiveMQ, shiftr.io, EMQX) over secure WebSockets. Works on almost any network, including mobile data and school or office Wi-Fi. Messages sent through the relay are not encrypted, so anyone listening on the broker could see player names and moves.
+- **Direct:** a WebRTC peer-to-peer link set up with [Trystero](https://github.com/dmotz/trystero). It has lower latency, but some networks block it.
+
+The match uses the direct link while it is working and switches to the relay automatically if the direct link fails or never connects.
 
 To play multiplayer:
 
@@ -67,6 +72,12 @@ To play multiplayer:
 2. One player chooses Create Game and shares the 4 digit join code.
 3. The other player chooses Join Game and enters that code.
 4. When both players are in the lobby, the match starts automatically.
+
+Troubleshooting:
+
+- Open the browser console (F12). It shows `Multiplayer: using direct peer-to-peer link` or `Multiplayer: using relay servers`.
+- Add `?net=relay` or `?net=direct` to the page URL to test one path at a time. Both players must use the same setting.
+- To let more players use the direct link, add TURN servers to `MULTIPLAYER_TURN_SERVERS` in `index.html`, for example from a free Metered or ExpressTURN account.
 
 ## Run Locally
 

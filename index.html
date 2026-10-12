@@ -1743,28 +1743,35 @@
     const MATCH_FOUND_DELAY = 2000;
     const MULTIPLAYER_STATE_INTERVAL = 50;
 
-    // Peer-to-peer connection settings used by Trystero.
-    const MULTIPLAYER_APP_CONFIG = {
-      appId: "blades-of-steel-szhang2187-v4",
-      relayUrls: [
-        "wss://relay.damus.io",
-        "wss://nos.lol",
-        "wss://relay.primal.net",
-        "wss://relay.nostr.band",
-        "wss://nostr.wine"
-      ],
-      rtcConfig: {
-        iceServers: [
-          { urls: "stun:stun.l.google.com:19302" },
-          { urls: "stun:stun1.l.google.com:19302" },
-          { urls: "turn:openrelay.metered.ca:80", username: "openrelayproject", credential: "openrelayproject" },
-          { urls: "turn:openrelay.metered.ca:443", username: "openrelayproject", credential: "openrelayproject" },
-          { urls: "turns:openrelay.metered.ca:443", username: "openrelayproject", credential: "openrelayproject" }
-        ]
-      }
-    };
-    const MULTIPLAYER_ROOM_PREFIX = "code-lobby-v2";
+    // Multiplayer networking settings. Every lobby has two paths between players:
+    // - Relay: public MQTT brokers over secure WebSockets. Works on any network that can
+    //   browse the web, including mobile data and school/office Wi-Fi.
+    // - Direct: a WebRTC link set up by Trystero. Lower latency, but some networks block it.
+    // Match traffic uses the direct link while it is healthy and falls back to the relay.
+    const MULTIPLAYER_APP_ID = "blades-of-steel-szhang2187-v5";
+    const MULTIPLAYER_ROOM_PREFIX = "code-lobby-v3";
     const MULTIPLAYER_MAP_ID = "weizen";
+    // Library versions are pinned: unpinned imports silently pulled in breaking API changes.
+    const TRYSTERO_MODULE_URL = "https://cdn.jsdelivr.net/npm/@trystero-p2p/nostr@0.26.0/+esm";
+    const MQTT_MODULE_URL = "https://cdn.jsdelivr.net/npm/mqtt@5.16.0/dist/mqtt.esm.js";
+    const MULTIPLAYER_RELAY_BROKERS = [
+      { url: "wss://broker.emqx.io:8084/mqtt" },
+      { url: "wss://broker.hivemq.com:8884/mqtt" },
+      { url: "wss://public.cloud.shiftr.io", username: "public", password: "public" }
+    ];
+    // Optional TURN servers let more players use the direct link instead of the relay,
+    // e.g. from a free Metered or ExpressTURN account:
+    // { urls: "turn:example.com:3478", username: "user", credential: "pass" }
+    const MULTIPLAYER_TURN_SERVERS = [];
+    // Add ?net=relay or ?net=direct to the page URL to test a single path.
+    const MULTIPLAYER_NET_MODE = new URLSearchParams(window.location.search).get("net") || "auto";
+    const MULTIPLAYER_HEARTBEAT_INTERVAL = 1000;
+    const MULTIPLAYER_DIRECT_STALE_AFTER = 2500;
+    const MULTIPLAYER_RELAY_STALE_AFTER = 3000;
+    const MULTIPLAYER_OPPONENT_TIMEOUT = 10000;
+    const MULTIPLAYER_SLOW_CONNECT_DELAY = 8000;
+    const MULTIPLAYER_HOST_SEARCH_HINT_DELAY = 15000;
+    const MULTIPLAYER_SEEN_MESSAGE_LIMIT = 500;
 
     // Sound effect pools allow repeated sounds without cutting off the previous one.
     const SWING_SOUND_SRC = "assets/sword-swing.mp3";
@@ -1874,28 +1881,11 @@
     let gameOver = false;
     let roundResetTimer = null;
     let winnerTransitionTimer = null;
-    let trysteroModulePromise = null;
+    const multiplayerModulePromises = new Map();
 
     // Multiplayer session state shared by lobby, match start, and network sync.
-    const multiplayer = {
-      status: "idle",
-      room: null,
-      selfId: "",
-      remotePeerId: "",
-      localName: "",
-      remoteName: "",
-      joinCode: "",
-      matchId: "",
-      mapId: MULTIPLAYER_MAP_ID,
-      isHost: false,
-      localPlayerIndex: 0,
-      remotePlayerIndex: 1,
-      actions: null,
-      lobbyPulseTimer: null,
-      matchStartTimer: null,
-      returnTimer: null,
-      lastStateSentAt: 0
-    };
+    // The session counter outlives resets so late async callbacks can tell they are stale.
+    const multiplayer = { session: 0, ...createMultiplayerSessionState() };
 
     // Build control lookup maps from whichever keybinds are currently active.
     function refreshSingleplayerControlMaps() {
@@ -2672,56 +2662,9 @@
       return cleanName || `Fencer ${Math.floor(1000 + Math.random() * 9000)}`;
     }
 
-    function safeSend(sendAction, payload, peerId) {
-      if (!sendAction) {
-        return;
-      }
-
-      try {
-        if (peerId) {
-          sendAction(payload, peerId);
-        } else {
-          sendAction(payload);
-        }
-      } catch (error) {
-        console.warn("Multiplayer send failed", error);
-      }
-    }
-
-    function loadTrystero() {
-      if (!trysteroModulePromise) {
-        trysteroModulePromise = import("https://esm.run/trystero/nostr");
-      }
-
-      return trysteroModulePromise;
-    }
-
-    function stopMultiplayerSession() {
-      if (multiplayer.lobbyPulseTimer) {
-        window.clearInterval(multiplayer.lobbyPulseTimer);
-      }
-
-      if (multiplayer.matchStartTimer) {
-        window.clearTimeout(multiplayer.matchStartTimer);
-      }
-
-      if (multiplayer.returnTimer) {
-        window.clearTimeout(multiplayer.returnTimer);
-      }
-
-      multiplayer.status = "idle";
-
-      if (multiplayer.room) {
-        try {
-          multiplayer.room.leave();
-        } catch (error) {
-          console.warn("Could not leave multiplayer room", error);
-        }
-      }
-
-      Object.assign(multiplayer, {
+    function createMultiplayerSessionState() {
+      return {
         status: "idle",
-        room: null,
         selfId: "",
         remotePeerId: "",
         localName: "",
@@ -2732,12 +2675,74 @@
         isHost: false,
         localPlayerIndex: 0,
         remotePlayerIndex: 1,
-        actions: null,
-        lobbyPulseTimer: null,
+        room: null,
+        directAction: null,
+        directPeerId: "",
+        lastDirectAt: 0,
+        activeLink: "",
+        relays: [],
+        preferredRelay: null,
+        relayTopic: "",
+        nextSeq: 0,
+        seenMessages: new Set(),
+        lastStateSeq: 0,
+        lastMoveSeq: 0,
+        lastHeardAt: 0,
+        searchStartedAt: 0,
+        lobbyNotice: "",
+        heartbeatTimer: null,
         matchStartTimer: null,
         returnTimer: null,
         lastStateSentAt: 0
-      });
+      };
+    }
+
+    function loadMultiplayerModule(url) {
+      if (!multiplayerModulePromises.has(url)) {
+        // Forget failed loads so the next lobby attempt can retry.
+        multiplayerModulePromises.set(url, import(url).catch((error) => {
+          multiplayerModulePromises.delete(url);
+          throw error;
+        }));
+      }
+
+      return multiplayerModulePromises.get(url);
+    }
+
+    function makeMultiplayerId() {
+      return window.crypto?.randomUUID?.() || `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+    }
+
+    function multiplayerSessionIsCurrent(session) {
+      return session === multiplayer.session && multiplayer.status !== "idle";
+    }
+
+    function opponentConnected() {
+      return multiplayer.status === "matched" || multiplayer.status === "playing";
+    }
+
+    function stopMultiplayerSession() {
+      window.clearInterval(multiplayer.heartbeatTimer);
+      window.clearTimeout(multiplayer.matchStartTimer);
+      window.clearTimeout(multiplayer.returnTimer);
+
+      if (multiplayer.remotePeerId && multiplayer.status !== "idle") {
+        sendOnAllPaths("bye", {}, multiplayer.remotePeerId);
+      }
+
+      // A non-forced end lets the goodbye message flush before the socket closes.
+      multiplayer.relays.forEach(({ client }) => client.end(false));
+      const room = multiplayer.room;
+
+      if (room) {
+        try {
+          Promise.resolve(room.leave()).catch((error) => console.warn("Could not leave multiplayer room", error));
+        } catch (error) {
+          console.warn("Could not leave multiplayer room", error);
+        }
+      }
+
+      Object.assign(multiplayer, createMultiplayerSessionState(), { session: multiplayer.session + 1 });
       clearMultiplayerInputs();
     }
 
@@ -2753,46 +2758,303 @@
       return `${MULTIPLAYER_ROOM_PREFIX}-${code}`;
     }
 
-    function setupMultiplayerRoom(module, code) {
-      const room = module.joinRoom(MULTIPLAYER_APP_CONFIG, multiplayerRoomName(code));
-      const [sendJoin, getJoin] = room.makeAction("bos-join");
-      const [sendHost, getHost] = room.makeAction("bos-host");
-      const [sendInput, getInput] = room.makeAction("bos-input");
-      const [sendState, getState] = room.makeAction("bos-state");
+    // Both paths carry the same envelope. Sequence numbers let receivers drop the
+    // duplicates that arrive when a message is sent on more than one path.
+    function makeMultiplayerEnvelope(type, data = {}, to = "") {
+      multiplayer.nextSeq += 1;
+      return {
+        type,
+        data,
+        to,
+        from: multiplayer.selfId,
+        code: multiplayer.joinCode,
+        seq: multiplayer.nextSeq
+      };
+    }
 
-      multiplayer.room = room;
-      multiplayer.selfId = module.selfId || `${Date.now()}-${Math.random()}`;
-      multiplayer.actions = { sendJoin, sendHost, sendInput, sendState };
+    function directLinkHealthy() {
+      return Boolean(multiplayer.directPeerId) && performance.now() - multiplayer.lastDirectAt < MULTIPLAYER_DIRECT_STALE_AFTER;
+    }
 
-      room.onPeerJoin((peerId) => {
-        if (multiplayer.isHost && multiplayer.status === "lobby") {
-          safeSend(multiplayer.actions?.sendHost, {
-            accepted: false,
-            code: multiplayer.joinCode,
-            hostName: multiplayer.localName,
-            status: "waiting"
-          }, peerId);
+    function relayReady() {
+      return multiplayer.relays.some(({ client }) => client.connected);
+    }
+
+    function sendDirect(envelope, peerId = "") {
+      if (!multiplayer.directAction) {
+        return;
+      }
+
+      // Sends to a peer that just dropped reject; the relay covers those gaps.
+      try {
+        Promise.resolve(multiplayer.directAction.send(envelope, peerId ? { target: peerId } : {})).catch(() => {});
+      } catch (error) {
+        // Same as above.
+      }
+    }
+
+    function sendRelay(envelope, matchTraffic = false) {
+      const payload = JSON.stringify(envelope);
+      const connected = multiplayer.relays.filter(({ client }) => client.connected);
+      let targets = connected;
+
+      // High-rate match traffic sticks to one broker the opponent was recently heard on.
+      if (matchTraffic) {
+        const now = performance.now();
+        const fresh = connected.filter((relay) => now - relay.lastOpponentAt < MULTIPLAYER_RELAY_STALE_AFTER);
+
+        if (!fresh.includes(multiplayer.preferredRelay)) {
+          multiplayer.preferredRelay = fresh.sort((a, b) => b.lastOpponentAt - a.lastOpponentAt)[0] || null;
         }
-      });
 
-      room.onPeerLeave((peerId) => {
-        if (peerId === multiplayer.remotePeerId && multiplayer.isHost && multiplayer.status === "lobby") {
-          multiplayer.remotePeerId = "";
-          multiplayer.remoteName = "";
-          updateLobbyDisplay("Waiting for another player...");
+        if (multiplayer.preferredRelay) {
+          targets = [multiplayer.preferredRelay];
+        }
+      }
+
+      targets.forEach(({ client }) => {
+        client.publish(multiplayer.relayTopic, payload, { qos: 0 });
+      });
+    }
+
+    // Match traffic takes the direct link while it is healthy, otherwise the relay.
+    function sendToOpponent(type, data) {
+      if (!multiplayer.remotePeerId) {
+        return;
+      }
+
+      const envelope = makeMultiplayerEnvelope(type, data, multiplayer.remotePeerId);
+
+      if (directLinkHealthy()) {
+        sendDirect(envelope, multiplayer.directPeerId);
+      } else {
+        sendRelay(envelope, true);
+      }
+    }
+
+    // Lobby messages and heartbeats go out on every path so each path stays verified.
+    function sendOnAllPaths(type, data, to = "") {
+      const envelope = makeMultiplayerEnvelope(type, data, to);
+      sendDirect(envelope);
+      sendRelay(envelope);
+    }
+
+    function receiveMultiplayerMessage(envelope, source) {
+      if (!envelope || typeof envelope !== "object" || envelope.from === multiplayer.selfId || envelope.code !== multiplayer.joinCode) {
+        return;
+      }
+
+      if (envelope.to && envelope.to !== multiplayer.selfId) {
+        return;
+      }
+
+      // Track path health before de-duplicating so every path that delivers counts.
+      if (envelope.from === multiplayer.remotePeerId) {
+        const now = performance.now();
+        multiplayer.lastHeardAt = now;
+
+        if (source.directPeerId) {
+          multiplayer.directPeerId = source.directPeerId;
+          multiplayer.lastDirectAt = now;
+        } else if (source.relay) {
+          source.relay.lastOpponentAt = now;
+        }
+      }
+
+      const messageKey = `${envelope.from}:${envelope.seq}`;
+
+      if (multiplayer.seenMessages.has(messageKey)) {
+        return;
+      }
+
+      multiplayer.seenMessages.add(messageKey);
+
+      if (multiplayer.seenMessages.size > MULTIPLAYER_SEEN_MESSAGE_LIMIT) {
+        multiplayer.seenMessages.delete(multiplayer.seenMessages.values().next().value);
+      }
+
+      if (envelope.type === "join") {
+        handleLobbyJoinRequest(envelope);
+      } else if (envelope.type === "host") {
+        handleHostLobbyMessage(envelope);
+      } else if (envelope.type === "input") {
+        handleMultiplayerInput(envelope);
+      } else if (envelope.type === "state") {
+        applyMultiplayerState(envelope);
+      } else if (envelope.type === "bye" && envelope.from === multiplayer.remotePeerId) {
+        handleOpponentLeft();
+      }
+    }
+
+    async function connectRelay(session) {
+      const { default: mqtt } = await loadMultiplayerModule(MQTT_MODULE_URL);
+
+      if (!multiplayerSessionIsCurrent(session)) {
+        return;
+      }
+
+      multiplayer.relays = MULTIPLAYER_RELAY_BROKERS.map((broker) => {
+        const relay = { url: broker.url, lastOpponentAt: 0, warned: false };
+        relay.client = mqtt.connect(broker.url, {
+          username: broker.username,
+          password: broker.password,
+          connectTimeout: 8000,
+          reconnectPeriod: 3000,
+          keepalive: 30
+        });
+        relay.client.on("connect", () => {
+          relay.client.subscribe(multiplayer.relayTopic, { qos: 0 });
+          handleMultiplayerPathReady();
+        });
+        relay.client.on("message", (topic, payload) => {
+          try {
+            receiveMultiplayerMessage(JSON.parse(payload.toString()), { relay });
+          } catch (error) {
+            // Ignore anything on the topic that is not one of our messages.
+          }
+        });
+        relay.client.on("error", (error) => {
+          if (!relay.warned) {
+            relay.warned = true;
+            console.warn(`Relay ${broker.url} unavailable`, error?.message || error);
+          }
+        });
+        return relay;
+      });
+    }
+
+    async function connectDirectLink(session) {
+      const { joinRoom } = await loadMultiplayerModule(TRYSTERO_MODULE_URL);
+
+      if (!multiplayerSessionIsCurrent(session)) {
+        return;
+      }
+
+      const room = joinRoom({
+        appId: MULTIPLAYER_APP_ID,
+        turnConfig: MULTIPLAYER_TURN_SERVERS,
+        relayConfig: { warnOnRelayFailure: false }
+      }, multiplayerRoomName(multiplayer.joinCode), {
+        onJoinError: (details) => console.warn("Direct link failed, using relay instead:", details.error)
+      });
+      const action = room.makeAction("bos");
+      action.onMessage = (envelope, { peerId }) => receiveMultiplayerMessage(envelope, { directPeerId: peerId });
+      room.onPeerJoin = (peerId) => {
+        // Say hello right away so the opponent can match this peer to a lobby player.
+        sendDirect(makeMultiplayerEnvelope("ping", {}, multiplayer.remotePeerId), peerId);
+        handleMultiplayerPathReady();
+      };
+      room.onPeerLeave = (peerId) => {
+        if (peerId === multiplayer.directPeerId) {
+          multiplayer.directPeerId = "";
+          multiplayer.lastDirectAt = 0;
+        }
+      };
+      multiplayer.room = room;
+      multiplayer.directAction = action;
+    }
+
+    function startMultiplayerNetwork() {
+      const session = multiplayer.session;
+      multiplayer.selfId = makeMultiplayerId();
+      multiplayer.relayTopic = `${MULTIPLAYER_APP_ID}/${multiplayerRoomName(multiplayer.joinCode)}`;
+      multiplayer.searchStartedAt = performance.now();
+      multiplayer.heartbeatTimer = window.setInterval(multiplayerHeartbeat, MULTIPLAYER_HEARTBEAT_INTERVAL);
+
+      const attempts = [];
+
+      if (MULTIPLAYER_NET_MODE !== "direct") {
+        attempts.push(connectRelay(session));
+      }
+
+      if (MULTIPLAYER_NET_MODE !== "relay") {
+        attempts.push(connectDirectLink(session));
+      }
+
+      Promise.allSettled(attempts).then((results) => {
+        if (!multiplayerSessionIsCurrent(session)) {
           return;
         }
 
-        if (peerId === multiplayer.remotePeerId && multiplayer.status !== "idle") {
-          showMatchmakingScreen("Opponent Left", "The other player disconnected. Returning to the main menu...");
-          multiplayer.returnTimer = window.setTimeout(() => showMainMenu(false), MATCH_FOUND_DELAY);
+        const failures = results.filter((result) => result.status === "rejected");
+        failures.forEach((failure) => console.warn("Multiplayer connection path unavailable", failure.reason));
+
+        if (failures.length === results.length) {
+          multiplayer.status = "error";
+          showMatchmakingScreen("Connection Failed", "Could not load the multiplayer network. Check your internet connection and try again.");
         }
       });
 
-      getJoin((data, peerId) => handleLobbyJoinRequest(data, peerId));
-      getHost((data, peerId) => handleHostLobbyMessage(data, peerId));
-      getInput((data, peerId) => handleMultiplayerInput(data, peerId));
-      getState((data, peerId) => applyMultiplayerState(data, peerId));
+      refreshLobbyStatus();
+    }
+
+    function handleMultiplayerPathReady() {
+      refreshLobbyStatus();
+      sendJoinRequest();
+    }
+
+    function refreshLobbyStatus() {
+      if (multiplayer.status !== "lobby" && multiplayer.status !== "joining") {
+        return;
+      }
+
+      const waited = performance.now() - multiplayer.searchStartedAt;
+      const networkReady = relayReady() || Object.keys(multiplayer.room?.getPeers() || {}).length > 0;
+      let statusText;
+
+      if (multiplayer.lobbyNotice) {
+        statusText = multiplayer.lobbyNotice;
+      } else if (!networkReady) {
+        statusText = waited < MULTIPLAYER_SLOW_CONNECT_DELAY
+          ? "Connecting to lobby servers..."
+          : "Lobby servers are slow to respond. Still trying...";
+      } else if (multiplayer.isHost) {
+        statusText = "Waiting for another player...";
+      } else {
+        statusText = waited < MULTIPLAYER_HOST_SEARCH_HINT_DELAY
+          ? `Looking for host ${multiplayer.joinCode}...`
+          : `Still looking for lobby ${multiplayer.joinCode}. Check the code and keep the host on the lobby screen.`;
+      }
+
+      updateLobbyDisplay(statusText);
+    }
+
+    function multiplayerHeartbeat() {
+      refreshLobbyStatus();
+      sendJoinRequest();
+
+      if (!opponentConnected()) {
+        return;
+      }
+
+      // The guest's heartbeat repeats its held movement keys in case a move message was lost.
+      if (!multiplayer.isHost && multiplayer.status === "playing") {
+        sendOnAllPaths("input", localMovePayload(), multiplayer.remotePeerId);
+      } else {
+        sendOnAllPaths("ping", {}, multiplayer.remotePeerId);
+      }
+
+      const link = directLinkHealthy() ? "direct" : "relay";
+
+      if (link !== multiplayer.activeLink) {
+        multiplayer.activeLink = link;
+        console.info(`Multiplayer: using ${link === "direct" ? "direct peer-to-peer link" : "relay servers"}`);
+      }
+
+      if (performance.now() - multiplayer.lastHeardAt > MULTIPLAYER_OPPONENT_TIMEOUT) {
+        handleOpponentLeft();
+      }
+    }
+
+    function handleOpponentLeft() {
+      // After a finished match both players leave on their own; that is not a disconnect.
+      if (gameOver || !opponentConnected()) {
+        return;
+      }
+
+      multiplayer.status = "ended";
+      showMatchmakingScreen("Opponent Left", "The other player disconnected. Returning to the main menu...");
+      multiplayer.returnTimer = window.setTimeout(() => showMainMenu(false), MATCH_FOUND_DELAY);
     }
 
     function rememberMultiplayerName(rawName) {
@@ -2801,36 +3063,23 @@
       showMultiplayerChoice();
     }
 
-    async function beginCreateGame() {
+    function beginCreateGame() {
       const localName = multiplayer.localName || sanitizePlayerName(multiplayerNameInput.value);
       stopMultiplayerSession();
       gameMode = "multiplayer";
-      multiplayer.status = "connecting";
-      multiplayer.localName = localName;
-      multiplayer.joinCode = generateJoinCode();
-      multiplayer.isHost = true;
-      multiplayer.localPlayerIndex = 0;
-      multiplayer.remotePlayerIndex = 1;
-      showLobbyScreen("Creating lobby...");
-
-      try {
-        const module = await loadTrystero();
-
-        if (multiplayer.status !== "connecting") {
-          return;
-        }
-
-        setupMultiplayerRoom(module, multiplayer.joinCode);
-        multiplayer.status = "lobby";
-        updateLobbyDisplay("Waiting for another player...");
-      } catch (error) {
-        console.error(error);
-        multiplayer.status = "error";
-        showMatchmakingScreen("Connection Failed", "Could not create the lobby. Check your internet connection and try again.");
-      }
+      Object.assign(multiplayer, {
+        status: "lobby",
+        localName,
+        joinCode: generateJoinCode(),
+        isHost: true,
+        localPlayerIndex: 0,
+        remotePlayerIndex: 1
+      });
+      showLobbyScreen("Connecting to lobby servers...");
+      startMultiplayerNetwork();
     }
 
-    async function beginJoinGame(rawCode) {
+    function beginJoinGame(rawCode) {
       const code = normalizeJoinCode(rawCode);
 
       if (code.length !== 4) {
@@ -2842,31 +3091,16 @@
       const localName = multiplayer.localName || sanitizePlayerName(multiplayerNameInput.value);
       stopMultiplayerSession();
       gameMode = "multiplayer";
-      multiplayer.status = "connecting";
-      multiplayer.localName = localName;
-      multiplayer.joinCode = code;
-      multiplayer.isHost = false;
-      multiplayer.localPlayerIndex = 1;
-      multiplayer.remotePlayerIndex = 0;
-      showLobbyScreen(`Joining lobby ${code}...`);
-
-      try {
-        const module = await loadTrystero();
-
-        if (multiplayer.status !== "connecting") {
-          return;
-        }
-
-        setupMultiplayerRoom(module, code);
-        multiplayer.status = "joining";
-        updateLobbyDisplay(`Looking for host ${code}...`);
-        sendJoinRequest();
-        multiplayer.lobbyPulseTimer = window.setInterval(sendJoinRequest, 1000);
-      } catch (error) {
-        console.error(error);
-        multiplayer.status = "error";
-        showMatchmakingScreen("Connection Failed", "Could not join the lobby. Check the code and your internet connection.");
-      }
+      Object.assign(multiplayer, {
+        status: "joining",
+        localName,
+        joinCode: code,
+        isHost: false,
+        localPlayerIndex: 1,
+        remotePlayerIndex: 0
+      });
+      showLobbyScreen("Connecting to lobby servers...");
+      startMultiplayerNetwork();
     }
 
     function sendJoinRequest() {
@@ -2874,82 +3108,63 @@
         return;
       }
 
-      safeSend(multiplayer.actions?.sendJoin, {
-        code: multiplayer.joinCode,
-        name: multiplayer.localName,
-        at: Date.now()
-      });
+      sendOnAllPaths("join", { name: multiplayer.localName });
     }
 
-    function handleLobbyJoinRequest(data, peerId) {
-      if (!multiplayer.isHost || data?.code !== multiplayer.joinCode || peerId === multiplayer.selfId) {
-        return;
-      }
-
-      if (multiplayer.status === "matched" && peerId === multiplayer.remotePeerId) {
-        safeSend(multiplayer.actions?.sendHost, {
-          accepted: true,
-          code: multiplayer.joinCode,
-          matchId: multiplayer.matchId,
-          mapId: multiplayer.mapId,
-          hostName: multiplayer.localName,
-          guestName: multiplayer.remoteName
-        }, peerId);
-        return;
-      }
-
-      if (multiplayer.status !== "lobby") {
-        return;
-      }
-
-      multiplayer.remotePeerId = peerId;
-      multiplayer.remoteName = sanitizePlayerName(data.name || "Opponent");
-      multiplayer.matchId = `${multiplayer.joinCode}-${Date.now()}`;
-      multiplayer.mapId = MULTIPLAYER_MAP_ID;
-      multiplayer.status = "matched";
-      updateLobbyDisplay(`${multiplayer.remoteName} joined.`);
-
-      safeSend(multiplayer.actions?.sendHost, {
+    function sendHostAcceptance() {
+      sendOnAllPaths("host", {
         accepted: true,
-        code: multiplayer.joinCode,
         matchId: multiplayer.matchId,
         mapId: multiplayer.mapId,
         hostName: multiplayer.localName,
         guestName: multiplayer.remoteName
-      }, peerId);
+      }, multiplayer.remotePeerId);
+    }
+
+    function handleLobbyJoinRequest({ from, data }) {
+      if (!multiplayer.isHost) {
+        return;
+      }
+
+      // The guest keeps asking until it hears back, so repeat the acceptance.
+      if (from === multiplayer.remotePeerId) {
+        sendHostAcceptance();
+        return;
+      }
+
+      if (multiplayer.status !== "lobby") {
+        sendOnAllPaths("host", { accepted: false, hostName: multiplayer.localName }, from);
+        return;
+      }
+
+      multiplayer.remotePeerId = from;
+      multiplayer.remoteName = sanitizePlayerName(data?.name || "Opponent");
+      multiplayer.matchId = `${multiplayer.joinCode}-${Date.now()}`;
+      multiplayer.mapId = MULTIPLAYER_MAP_ID;
+      multiplayer.status = "matched";
+      multiplayer.lastHeardAt = performance.now();
+      updateLobbyDisplay(`${multiplayer.remoteName} joined.`);
+      sendHostAcceptance();
       showMatchFoundAndStart();
     }
 
-    function handleHostLobbyMessage(data, peerId) {
-      if (multiplayer.isHost || data?.code !== multiplayer.joinCode || peerId === multiplayer.selfId) {
+    function handleHostLobbyMessage({ from, data }) {
+      if (multiplayer.isHost || multiplayer.status !== "joining") {
         return;
       }
 
-      if (!data.accepted) {
-        multiplayer.remotePeerId = peerId;
-        multiplayer.remoteName = sanitizePlayerName(data.hostName || "Host");
-        updateLobbyDisplay(`Found host ${multiplayer.remoteName}. Joining...`);
+      if (!data?.accepted) {
+        multiplayer.lobbyNotice = `Lobby ${multiplayer.joinCode} already has two players.`;
+        refreshLobbyStatus();
         return;
       }
 
-      if (multiplayer.status !== "joining" && multiplayer.status !== "lobby") {
-        return;
-      }
-
-      multiplayer.remotePeerId = peerId;
+      multiplayer.remotePeerId = from;
       multiplayer.remoteName = sanitizePlayerName(data.hostName || "Host");
       multiplayer.matchId = data.matchId;
       multiplayer.mapId = data.mapId || MULTIPLAYER_MAP_ID;
       multiplayer.status = "matched";
-      multiplayer.isHost = false;
-      multiplayer.localPlayerIndex = 1;
-      multiplayer.remotePlayerIndex = 0;
-
-      if (multiplayer.lobbyPulseTimer) {
-        window.clearInterval(multiplayer.lobbyPulseTimer);
-        multiplayer.lobbyPulseTimer = null;
-      }
-
+      multiplayer.lastHeardAt = performance.now();
       updateLobbyDisplay(`Joined ${multiplayer.remoteName}'s lobby.`);
       showMatchFoundAndStart();
     }
@@ -2957,11 +3172,7 @@
     function showMatchFoundAndStart() {
       showMatchmakingScreen("Match Found!", `${multiplayer.localName} vs ${multiplayer.remoteName}`);
       matchFoundBox.classList.remove("is-hidden");
-
-      if (multiplayer.matchStartTimer) {
-        window.clearTimeout(multiplayer.matchStartTimer);
-      }
-
+      window.clearTimeout(multiplayer.matchStartTimer);
       multiplayer.matchStartTimer = window.setTimeout(() => {
         multiplayer.matchStartTimer = null;
         startMultiplayerMatch();
@@ -3023,15 +3234,21 @@
       input[direction] = pressed;
     }
 
-    function handleMultiplayerInput(data, peerId) {
-      if (!multiplayer.isHost || multiplayer.status !== "playing" || peerId !== multiplayer.remotePeerId) {
+    function handleMultiplayerInput({ from, seq, data }) {
+      if (!multiplayer.isHost || multiplayer.status !== "playing" || from !== multiplayer.remotePeerId) {
         return;
       }
 
       const playerIndex = multiplayer.remotePlayerIndex;
 
+      // Move messages carry both keys, so only the newest one matters if paths reorder them.
       if (data?.kind === "move") {
-        applyMultiplayerMove(playerIndex, data.direction, Boolean(data.pressed));
+        if (seq > multiplayer.lastMoveSeq) {
+          multiplayer.lastMoveSeq = seq;
+          applyMultiplayerMove(playerIndex, "left", Boolean(data.left));
+          applyMultiplayerMove(playerIndex, "right", Boolean(data.right));
+        }
+
         return;
       }
 
@@ -3053,7 +3270,12 @@
         return;
       }
 
-      safeSend(multiplayer.actions?.sendInput, payload, multiplayer.remotePeerId);
+      sendToOpponent("input", payload);
+    }
+
+    function localMovePayload() {
+      const input = multiplayerInputs[multiplayer.localPlayerIndex];
+      return { kind: "move", left: Boolean(input?.left), right: Boolean(input?.right) };
     }
 
     function handleMultiplayerKeyDown(event) {
@@ -3069,7 +3291,7 @@
 
         if (!multiplayerInputs[playerIndex][direction]) {
           applyMultiplayerMove(playerIndex, direction, true);
-          sendLocalMultiplayerInput({ kind: "move", direction, pressed: true });
+          sendLocalMultiplayerInput(localMovePayload());
         }
 
         return true;
@@ -3110,17 +3332,18 @@
       event.preventDefault();
       const direction = event.code === MULTIPLAYER_KEYS.left ? "left" : "right";
       applyMultiplayerMove(multiplayer.localPlayerIndex, direction, false);
-      sendLocalMultiplayerInput({ kind: "move", direction, pressed: false });
+      sendLocalMultiplayerInput(localMovePayload());
       return true;
     }
 
-    function serializeMultiplayerPlayer(player) {
+    // Positions travel as fractions of the frame so screens of any size line up.
+    function serializeMultiplayerPlayer(player, frame) {
       return {
         hp: player.hp,
         lives: player.lives,
-        x: player.x,
-        y: player.y,
-        vy: player.vy,
+        x: player.x / frame.width,
+        y: player.y / frame.height,
+        vy: player.vy / frame.height,
         grounded: player.grounded,
         standingOn: player.standingOn,
         airJumpsUsed: player.airJumpsUsed,
@@ -3145,21 +3368,30 @@
       }
 
       multiplayer.lastStateSentAt = now;
-      safeSend(multiplayer.actions?.sendState, {
+      const frame = frameSize();
+      sendToOpponent("state", {
         matchId: multiplayer.matchId,
         mapId: currentMap.id,
         roundLabel: roundLabel.textContent,
         gameOver,
         winnerVisible: !winnerBanner.classList.contains("is-hidden"),
         winnerMessage: winnerMessage.textContent,
-        players: players.map((player) => serializeMultiplayerPlayer(player))
-      }, multiplayer.remotePeerId);
+        players: players.map((player) => serializeMultiplayerPlayer(player, frame))
+      });
     }
 
-    function applyMultiplayerState(data, peerId) {
-      if (multiplayer.isHost || multiplayer.status !== "playing" || peerId !== multiplayer.remotePeerId || data?.matchId !== multiplayer.matchId) {
+    function applyMultiplayerState({ from, seq, data }) {
+      if (multiplayer.isHost || multiplayer.status !== "playing" || from !== multiplayer.remotePeerId || data?.matchId !== multiplayer.matchId) {
         return;
       }
+
+      // Snapshots can arrive out of order when the link switches paths; keep the newest.
+      if (seq <= multiplayer.lastStateSeq) {
+        return;
+      }
+
+      multiplayer.lastStateSeq = seq;
+      const frame = frameSize();
 
       if (data.mapId && currentMap.id !== data.mapId) {
         setMap(data.mapId);
@@ -3175,10 +3407,23 @@
           return;
         }
 
+        // The host plays these effects itself; replay them from the snapshot changes here.
+        if (snapshot.isAttacking && !player.isAttacking) {
+          playSwingSound();
+        }
+
+        if (snapshot.hp < player.hp) {
+          flashHit(player);
+        }
+
+        if (snapshot.lives < player.lives) {
+          playLifeLostSound();
+        }
+
         player.lives = snapshot.lives;
-        player.x = snapshot.x;
-        player.y = snapshot.y;
-        player.vy = snapshot.vy;
+        player.x = snapshot.x * frame.width;
+        player.y = snapshot.y * frame.height;
+        player.vy = snapshot.vy * frame.height;
         player.grounded = snapshot.grounded;
         player.standingOn = snapshot.standingOn;
         player.airJumpsUsed = snapshot.airJumpsUsed;
@@ -3373,14 +3618,10 @@
       if (multiplayerMatchActive()) {
         const input = multiplayerInputs[multiplayer.localPlayerIndex];
 
-        if (input?.left) {
+        if (input?.left || input?.right) {
           applyMultiplayerMove(multiplayer.localPlayerIndex, "left", false);
-          sendLocalMultiplayerInput({ kind: "move", direction: "left", pressed: false });
-        }
-
-        if (input?.right) {
           applyMultiplayerMove(multiplayer.localPlayerIndex, "right", false);
-          sendLocalMultiplayerInput({ kind: "move", direction: "right", pressed: false });
+          sendLocalMultiplayerInput(localMovePayload());
         }
       }
 
@@ -3392,6 +3633,13 @@
           player.isDashing = false;
           player.el.classList.remove("is-attacking", "is-dashing", "is-walking");
         });
+      }
+    });
+
+    // Tell the opponent right away instead of letting them wait for the timeout.
+    window.addEventListener("pagehide", () => {
+      if (multiplayer.status !== "idle") {
+        stopMultiplayerSession();
       }
     });
 
